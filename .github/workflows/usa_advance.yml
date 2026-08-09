@@ -30,11 +30,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('usav2/requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('usa/requirements.txt') }}
 
       - name: Install dependencies
         run: |
-          cd usav2
+          cd usa
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
@@ -44,7 +44,7 @@ jobs:
 
       - name: Run USA Advance Scraper
         run: |
-          cd usav2
+          cd usa
           if [ -f advance.py ]; then
             python advance.py
           elif [ -f usa-Main/advance.py ]; then
@@ -57,7 +57,7 @@ jobs:
 
       - name: Commit & Push Output
         run: |
-          cd usav2
+          cd usa
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
