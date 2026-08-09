@@ -63,7 +63,7 @@ jobs:
 
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m "[skip ci] update USA advance telemetry ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+            git commit -m "update USA advance telemetry ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
 
             for i in {1..5}; do
               echo "🔁 Push attempt $i..."
