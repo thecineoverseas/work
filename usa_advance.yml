@@ -1,0 +1,79 @@
+name: USA Advance Scraper
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */2 * * *'
+
+concurrency:
+  group: usa-advance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    env:
+      REPO: thecineoverseas/usa
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('usav2/requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          cd usav2
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install requests aiohttp aiohttp-retry tqdm
+          fi
+
+      - name: Run USA Advance Scraper
+        run: |
+          cd usav2
+          if [ -f advance.py ]; then
+            python advance.py
+          elif [ -f usa-Main/advance.py ]; then
+            python usa-Main/advance.py
+          elif [ -f usa/usa-Main/advance.py ]; then
+            python usa/usa-Main/advance.py
+          else
+            python usa-advance.py
+          fi
+
+      - name: Commit & Push Output
+        run: |
+          cd usav2
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "[skip ci] update USA advance telemetry ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+
+            for i in {1..5}; do
+              echo "🔁 Push attempt $i..."
+              git pull --rebase origin main && \
+              git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
+              echo "⚠️ Push failed. Retrying in $((i*5))s..."
+              sleep $((i*5))
+            done
+
+            echo "✅ Advance updates pushed successfully"
+          else
+            echo "🟡 No changes detected"
+          fi
