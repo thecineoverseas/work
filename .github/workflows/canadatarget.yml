@@ -1,14 +1,8 @@
 name: CANADA TARGET DATE
 
 on:
-  schedule:
-    - cron: '0 */4 * * *'   # runs every 4 hours
   workflow_dispatch:          # allow manual trigger
-    inputs:
-      target_date:
-        description: 'Target date (YYYYMMDD or YYYY-MM-DD)'
-        required: false
-        default: '20260825'
+
 
 # 🔥 prevent overlapping runs
 concurrency:
@@ -21,8 +15,8 @@ jobs:
     timeout-minutes: 240      # 4-hour job cap
 
     env:
-      REPO: cinenationbo/canada
-      TARGET_DATE: "20260813"
+      REPO: thecineoverseas/canada
+      TARGET_DATE: "20260814"
       PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
