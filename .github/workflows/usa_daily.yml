@@ -2,9 +2,7 @@ name: USA Daily Box Office Scraper
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 * * * *'
-
+  
 concurrency:
   group: usa-daily-${{ github.ref }}
   cancel-in-progress: true
