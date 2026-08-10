@@ -1,0 +1,144 @@
+name: OCEANIA
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: 'Target Date override (optional, YYYY-MM-DD or YYYYMMDD)'
+        required: false
+        default: ''
+
+# 🔥 prevent overlapping runs
+concurrency:
+  group: oceania-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [daily, advance]
+
+    env:
+      REPO: thecineoverseas/aus
+
+    steps:
+      # 🔒 Clone PRIVATE repo
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      # 🐍 Setup Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 📦 Install dependencies
+      - name: Install dependencies
+        run: |
+          cd aus
+          python -m pip install --upgrade pip
+          pip install requests aiohttp aiohttp_retry tqdm cloudscraper tabulate playwright pytz
+
+      # 💾 Cache Playwright browsers
+      - name: Cache Playwright Browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('aus/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      # 📥 Install Playwright Browsers with dependencies
+      - name: Install Playwright Browsers
+        run: python -m playwright install chromium firefox --with-deps
+
+      # 🎬 Run Scrapers
+      - name: Run Scrapers
+        run: |
+          cd aus
+          MODE="${{ matrix.mode }}"
+
+          # Determine correct Australia script filename
+          if [ -f aus.py ]; then
+            SCRAPER_SCRIPT="aus.py"
+          elif [ -f austrila.py ]; then
+            SCRAPER_SCRIPT="austrila.py"
+          else
+            SCRAPER_SCRIPT=""
+          fi
+
+          # Run Australia
+          if [ -n "$SCRAPER_SCRIPT" ]; then
+            echo "🎬 Running Australia scraper ($SCRAPER_SCRIPT) in mode $MODE"
+            for i in {1..6}; do
+              echo "Australia Attempt $i"
+              if [ -n "${{ github.event.inputs.target_date }}" ]; then
+                if python $SCRAPER_SCRIPT --mode "$MODE" --date "${{ github.event.inputs.target_date }}"; then
+                  echo "✅ Australia finished successfully"
+                  break
+                fi
+              else
+                if python $SCRAPER_SCRIPT --mode "$MODE"; then
+                  echo "✅ Australia finished successfully"
+                  break
+                fi
+              fi
+              echo "❌ Australia failed. Retrying..."
+              sleep 10
+            done
+          fi
+
+          # Run New Zealand
+          if [ -f nz.py ]; then
+            echo "🎬 Running New Zealand scraper (nz.py) in mode $MODE"
+            for i in {1..6}; do
+              echo "New Zealand Attempt $i"
+              if [ -n "${{ github.event.inputs.target_date }}" ]; then
+                if python nz.py --mode "$MODE" --date "${{ github.event.inputs.target_date }}"; then
+                  echo "✅ New Zealand finished successfully"
+                  break
+                fi
+              else
+                if python nz.py --mode "$MODE"; then
+                  echo "✅ New Zealand finished successfully"
+                  break
+                fi
+              fi
+              echo "❌ New Zealand failed. Retrying..."
+              sleep 10
+            done
+          fi
+
+      # 💾 Commit & Push
+      - name: Commit scraper data
+        run: |
+          cd aus
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Add output data path
+          git add data/ || true
+
+          git commit -m "[skip ci] ${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+
+          sleep $((RANDOM % 10))
+
+          for i in {1..5}; do
+            echo "Push attempt $i"
+
+            git pull --rebase -X ours origin main || git rebase --abort || true
+
+            if git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+              echo "✅ Push succeeded"
+              break
+            fi
+
+            echo "❌ Push failed. Retrying in 5 seconds..."
+            sleep 5
+          done
