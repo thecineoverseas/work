@@ -2,9 +2,7 @@ name: USA Advance Scraper
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 */2 * * *'
-
+ 
 concurrency:
   group: usa-advance-${{ github.ref }}
   cancel-in-progress: true
