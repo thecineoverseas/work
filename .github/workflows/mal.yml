@@ -38,12 +38,8 @@ jobs:
         run: |
           cd malaysia
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          else
-            pip install requests aiohttp beautifulsoup4 tabulate
-          fi
-
+          pip install -r requirements.txt
+          
       # 🎬 Run scraper
       - name: Run scraper
         run: |
