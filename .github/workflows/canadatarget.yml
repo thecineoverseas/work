@@ -1,20 +1,29 @@
-name: CANADA TARGET
+name: CANADA TARGET DATE
 
 on:
-  workflow_dispatch:
+  schedule:
+    - cron: '0 */4 * * *'   # runs every 4 hours
+  workflow_dispatch:          # allow manual trigger
+    inputs:
+      target_date:
+        description: 'Target date (YYYYMMDD or YYYY-MM-DD)'
+        required: false
+        default: '20260825'
 
 # 🔥 prevent overlapping runs
 concurrency:
-  group: canada-t-${{ github.ref }}
+  group: canada-target-${{ github.ref }}-${{ github.event.inputs.target_date || 'default' }}
   cancel-in-progress: true
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 240      # 4-hour job cap
 
     env:
-      REPO: thecineoverseas/canada
-      TARGET_DATE: 20260813
+      REPO: cinenationbo/canada
+      TARGET_DATE: "20260813"
+      PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
       # 🔒 Clone PRIVATE repo
@@ -31,56 +40,80 @@ jobs:
       # 📦 Install dependencies
       - name: Install dependencies
         run: |
-          cd canada
+          if [ -d "canada" ]; then cd canada; fi
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            pip install requests curl_cffi beautifulsoup4 tabulate aiohttp cloudscraper playwright
+            pip install requests aiohttp cloudscraper playwright pytz tabulate
           fi
-          playwright install chromium
 
-      # 🎬 Run scraper
-      - name: Run scraper
+      # 💾 Cache Playwright browsers
+      - name: Cache Playwright Browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      # 📥 Install Playwright Chromium
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: python -m playwright install chromium
+
+      # 🎬 Run Scraper
+      - name: Run Canada Scraper
         run: |
-          cd canada
-          echo "🎬 Running canada.py with target date ${{ env.TARGET_DATE }}"
+          if [ -d "canada" ]; then cd canada; fi
+          RUN_DATE="${{ github.event.inputs.target_date || env.TARGET_DATE }}"
+          
+          if [ -f "canada-main.py" ]; then
+            SCRAPER_SCRIPT="canada-main.py"
+          else
+            SCRAPER_SCRIPT="canada-main.py"
+          fi
 
+          echo "🎬 Canada Scraper ($SCRAPER_SCRIPT) — target date=$RUN_DATE"
           for i in {1..6}; do
-            echo "Attempt $i"
-
-            if python canada.py --date "${{ env.TARGET_DATE }}"; then
-              echo "✅ Scraper finished successfully"
+            echo "  Attempt $i"
+            if python $SCRAPER_SCRIPT --date "$RUN_DATE"; then
+              echo "  ✅ Done"
               break
             fi
-
-            echo "❌ Scraper failed. Retrying in 10 seconds..."
+            echo "  ❌ Failed. Retrying in 10s..."
             sleep 10
           done
 
       # 💾 Commit & Push
       - name: Commit scraper data
         run: |
-          cd canada
+          if [ -d "canada" ]; then cd canada; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          git rm -rf --cached __pycache__ 2>/dev/null || true
 
-          git commit -m "update for ${{ env.TARGET_DATE }} ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+          git add data/ canada/ || git add . || true
+
+          RUN_DATE="${{ github.event.inputs.target_date || env.TARGET_DATE }}"
+          git commit -m "target=$RUN_DATE ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
 
           sleep $((RANDOM % 10))
 
           for i in {1..5}; do
             echo "Push attempt $i"
-
-            git pull --rebase origin main || true
+            git rebase --abort 2>/dev/null || true
+            git pull --rebase --autostash origin main || true
+            find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+            git rm -rf --cached __pycache__ 2>/dev/null || true
 
             if git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
               echo "✅ Push succeeded"
               break
             fi
-
-            echo "❌ Push failed. Retrying in 5 seconds..."
+            echo "❌ Push failed. Retrying in 5s..."
             sleep 5
           done
