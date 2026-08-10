@@ -1,11 +1,11 @@
-name: CANADA
+name: CANADA TARGET
 
 on:
   workflow_dispatch:
 
 # 🔥 prevent overlapping runs
 concurrency:
-  group: canada-${{ github.ref }}
+  group: canada-t-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
