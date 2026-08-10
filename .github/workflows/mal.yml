@@ -1,0 +1,99 @@
+name: MALAYSIA
+
+on:
+  workflow_dispatch:
+
+# 🔥 prevent overlapping runs
+concurrency:
+  group: malaysia-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [daily, advance]
+
+    env:
+      REPO: thecineoverseas/malaysia
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      # 🔒 Clone PRIVATE repo
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      # 🐍 Setup Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 📦 Install dependencies
+      - name: Install dependencies
+        run: |
+          cd malaysia
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install requests aiohttp beautifulsoup4 tabulate
+          fi
+
+      # 🎬 Run scraper
+      - name: Run scraper
+        run: |
+          cd malaysia
+          MODE="${{ matrix.mode }}"
+
+          echo "🎬 Running malaysia.py with mode $MODE"
+
+          for i in {1..6}; do
+            echo "Attempt $i"
+
+            if python malaysia.py --mode "$MODE"; then
+              echo "✅ Scraper finished successfully"
+              break
+            fi
+
+            echo "❌ Scraper failed. Retrying in 10 seconds..."
+            sleep 10
+          done
+
+      # 💾 Commit & Push
+      - name: Commit scraper data
+        run: |
+          cd malaysia
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Remove __pycache__ folders and untrack them if previously tracked in repo
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          git rm -rf --cached __pycache__ 2>/dev/null || true
+
+          git add data/
+
+          git commit -m "${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+
+          sleep $((RANDOM % 10))
+
+          for i in {1..5}; do
+            echo "Push attempt $i"
+
+            git rebase --abort 2>/dev/null || true
+            git pull --rebase --autostash origin main || true
+            find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+            git rm -rf --cached __pycache__ 2>/dev/null || true
+
+            if git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+              echo "✅ Push succeeded"
+              break
+            fi
+
+            echo "❌ Push failed. Retrying in 5 seconds..."
+            sleep 5
+          done
