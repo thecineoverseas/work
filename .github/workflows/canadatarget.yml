@@ -63,10 +63,10 @@ jobs:
           if [ -d "canada" ]; then cd canada; fi
           RUN_DATE="${{ github.event.inputs.target_date || env.TARGET_DATE }}"
           
-          if [ -f "canada-main.py" ]; then
-            SCRAPER_SCRIPT="canada-main.py"
+          if [ -f "canada.py" ]; then
+            SCRAPER_SCRIPT="canada.py"
           else
-            SCRAPER_SCRIPT="canada-main.py"
+            SCRAPER_SCRIPT="canada.py"
           fi
 
           echo "🎬 Canada Scraper ($SCRAPER_SCRIPT) — target date=$RUN_DATE"
