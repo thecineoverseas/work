@@ -18,7 +18,7 @@ jobs:
         mode: [daily, advance]
 
     env:
-      REPO: thecineoverseas/qatar
+      REPO: cinenationbo/qatar
 
     steps:
       # 🔒 Clone PRIVATE repo
@@ -35,7 +35,7 @@ jobs:
       # 📦 Install dependencies
       - name: Install dependencies
         run: |
-          cd qatar
+          cd Qatar
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
@@ -46,7 +46,7 @@ jobs:
       # 🎬 Run scraper
       - name: Run scraper
         run: |
-          cd qatar
+          cd Qatar
           MODE="${{ matrix.mode }}"
 
           echo "🎬 Running qatar.py with mode $MODE"
@@ -66,13 +66,13 @@ jobs:
       # 💾 Commit & Push
       - name: Commit scraper data
         run: |
-          cd qatar
+          cd Qatar
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add data/
 
-          git commit -m "[skip ci] ${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+          git commit -m "${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
 
           sleep $((RANDOM % 10))
 
