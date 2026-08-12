@@ -1,0 +1,94 @@
+name: KUWAIT TARGET DATE
+
+on:
+  schedule:
+    - cron: '*/40 * * * *'   # runs every 40 minutes
+  workflow_dispatch:          # also allow manual trigger
+
+# 🔥 prevent overlapping runs
+concurrency:
+  group: kuwait-target-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240      # 4-hour job cap
+
+    strategy:
+      fail-fast: false
+      matrix:
+        date: ["20260814"]
+
+    env:
+      REPO: thecineoverseas/kuwait
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      # 🔒 Clone PRIVATE repo
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      # 🐍 Setup Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 📦 Install dependencies
+      - name: Install dependencies
+        run: |
+          cd kuwait
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      # 🎬 Run scraper
+      - name: Run scraper
+        run: |
+          cd kuwait
+          RUN_DATE="${{ matrix.date }}"
+          MODE="advance"
+
+          echo "🎬 Running kuwait.py with mode $MODE and date $RUN_DATE"
+
+          for i in {1..6}; do
+            echo "Attempt $i"
+
+            if python kuwait.py --mode "$MODE" --date "$RUN_DATE"; then
+              echo "✅ Scraper finished successfully"
+              break
+            fi
+
+            echo "❌ Scraper failed. Retrying in 10 seconds..."
+            sleep 10
+          done
+
+      # 💾 Commit & Push
+      - name: Commit scraper data
+        run: |
+          cd kuwait
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add data/
+
+          git commit -m "target=${{ matrix.date }} advance ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+
+          sleep $((RANDOM % 10))
+
+          for i in {1..5}; do
+            echo "Push attempt $i"
+
+            git pull --rebase origin main || true
+
+            if git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+              echo "✅ Push succeeded"
+              break
+            fi
+
+            echo "❌ Push failed. Retrying in 5 seconds..."
+            sleep 5
+          done
