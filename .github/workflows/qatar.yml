@@ -35,7 +35,7 @@ jobs:
       # 📦 Install dependencies
       - name: Install dependencies
         run: |
-          cd Qatar
+          cd qatar
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
@@ -46,7 +46,7 @@ jobs:
       # 🎬 Run scraper
       - name: Run scraper
         run: |
-          cd Qatar
+          cd qatar
           MODE="${{ matrix.mode }}"
 
           echo "🎬 Running qatar.py with mode $MODE"
@@ -66,7 +66,7 @@ jobs:
       # 💾 Commit & Push
       - name: Commit scraper data
         run: |
-          cd Qatar
+          cd qatar
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
