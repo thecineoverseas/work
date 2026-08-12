@@ -7,7 +7,7 @@ on:
 
 # 🔥 prevent overlapping runs
 concurrency:
-  group: qatar-target-${{ github.ref }
+  group: qatar-target
   cancel-in-progress: true
 
 jobs:
