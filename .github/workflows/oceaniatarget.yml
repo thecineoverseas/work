@@ -1,6 +1,7 @@
 name: OCEANIA TARGET
 
 on:
+  
   workflow_dispatch:
     inputs:
       target_date:
@@ -113,7 +114,7 @@ jobs:
           # Add output data path
           git add data/ || true
 
-          git commit -m "[skip ci] update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+          git commit -m " update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
 
           sleep $((RANDOM % 10))
 
