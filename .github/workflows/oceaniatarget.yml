@@ -63,7 +63,7 @@ jobs:
           # Set the date - use workflow input or fallback to 20260814
           TARGET_DATE="${{ github.event.inputs.target_date }}"
           if [ -z "$TARGET_DATE" ]; then
-            TARGET_DATE="20260814"
+            TARGET_DATE="20260826"
           fi
           
           echo "🎬 Using target date: $TARGET_DATE"
