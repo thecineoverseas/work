@@ -1,8 +1,9 @@
 name: CANADA TARGET DATE
 
 on:
+  schedule:
+    - cron: '*/40 * * * *'   # runs periodically
   workflow_dispatch:          # allow manual trigger
-
 
 # 🔥 prevent overlapping runs
 concurrency:
@@ -16,7 +17,7 @@ jobs:
 
     env:
       REPO: thecineoverseas/canada
-      TARGET_DATE: "20260813"
+      TARGET_DATE: "20260825"
       PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
@@ -52,10 +53,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-playwright-
 
-      # 📥 Install Playwright Chromium
+      # 📥 Install Playwright Chromium with dependencies
       - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: python -m playwright install chromium
+        run: python -m playwright install chromium --with-deps
 
       # 🎬 Run Scraper
       - name: Run Canada Scraper
@@ -63,20 +64,20 @@ jobs:
           if [ -d "canada" ]; then cd canada; fi
           RUN_DATE="${{ github.event.inputs.target_date || env.TARGET_DATE }}"
           
-          if [ -f "canada.py" ]; then
-            SCRAPER_SCRIPT="canada.py"
+          if [ -f "canada-main.py" ]; then
+            SCRAPER_SCRIPT="canada-main.py"
           else
             SCRAPER_SCRIPT="canada.py"
           fi
 
           echo "🎬 Canada Scraper ($SCRAPER_SCRIPT) — target date=$RUN_DATE"
           for i in {1..6}; do
-            echo "  Attempt $i"
+            echo "  Attempt $i for date $RUN_DATE"
             if python $SCRAPER_SCRIPT --date "$RUN_DATE"; then
-              echo "  ✅ Done"
+              echo "  ✅ Done for $RUN_DATE"
               break
             fi
-            echo "  ❌ Failed. Retrying in 10s..."
+            echo "  ❌ Failed for $RUN_DATE. Retrying in 10s..."
             sleep 10
           done
 
