@@ -68,15 +68,14 @@ jobs:
           if [ -d "canada" ]; then cd canada; fi
           MATRIX_MODE="${{ matrix.mode }}"
 
-          # Compute America/Toronto timezone dates
+          # Compute America/Toronto timezone dates (1 date per mode)
           TORONTO_DAILY=$(python3 -c 'from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo("America/Toronto")).strftime("%Y-%m-%d"))')
-          TORONTO_ADV1=$(python3 -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo("America/Toronto")) + timedelta(days=1)).strftime("%Y-%m-%d"))')
-          TORONTO_ADV2=$(python3 -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo("America/Toronto")) + timedelta(days=2)).strftime("%Y-%m-%d"))')
+          TORONTO_ADV=$(python3 -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo("America/Toronto")) + timedelta(days=1)).strftime("%Y-%m-%d"))')
 
           if [ "$MATRIX_MODE" = "daily" ]; then
-            DATES=("$TORONTO_DAILY")
+            RUN_DATE="$TORONTO_DAILY"
           else
-            DATES=("$TORONTO_ADV1" "$TORONTO_ADV2")
+            RUN_DATE="$TORONTO_ADV"
           fi
 
           if [ -f "canada-main.py" ]; then
@@ -85,17 +84,15 @@ jobs:
             SCRAPER_SCRIPT="canada.py"
           fi
 
-          for RUN_DATE in "${DATES[@]}"; do
-            echo "🎬 Canada Scraper ($SCRAPER_SCRIPT) — mode=$MATRIX_MODE target_date=$RUN_DATE (America/Toronto)"
-            for i in {1..6}; do
-              echo "  Attempt $i for date $RUN_DATE"
-              if python $SCRAPER_SCRIPT --date "$RUN_DATE"; then
-                echo "  ✅ Done for $RUN_DATE"
-                break
-              fi
-              echo "  ❌ Failed for $RUN_DATE. Retrying in 10s..."
-              sleep 10
-            done
+          echo "🎬 Canada Scraper ($SCRAPER_SCRIPT) — mode=$MATRIX_MODE target_date=$RUN_DATE (America/Toronto)"
+          for i in {1..6}; do
+            echo "  Attempt $i for date $RUN_DATE"
+            if python $SCRAPER_SCRIPT --date "$RUN_DATE"; then
+              echo "  ✅ Done for $RUN_DATE"
+              break
+            fi
+            echo "  ❌ Failed for $RUN_DATE. Retrying in 10s..."
+            sleep 10
           done
 
       # 💾 Commit & Push
@@ -110,7 +107,7 @@ jobs:
 
           git add data/ canada/ || git add . || true
 
-          git commit -m "[skip ci] ${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+          git commit -m "${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
 
           sleep $((RANDOM % 10))
 
