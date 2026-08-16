@@ -4,24 +4,10 @@ on:
   schedule:
     - cron: '30 */2 * * *'   # runs every 2 hours
   workflow_dispatch:          # allow manual trigger
-    inputs:
-      mode:
-        description: 'Scraping mode (all, daily, or advance)'
-        required: false
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - daily
-          - advance
-      target_date:
-        description: 'Custom target date (YYYY-MM-DD or YYYYMMDD, optional)'
-        required: false
-        default: ''
 
 # 🔥 prevent overlapping runs
 concurrency:
-  group: canada-boxoffice-${{ github.ref }}-${{ github.event.inputs.mode || 'all' }}-${{ github.event.inputs.target_date || 'auto' }}
+  group: canada-boxoffice-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -35,7 +21,7 @@ jobs:
         mode: [daily, advance]
 
     env:
-      REPO: cinenationbo/canada
+      REPO: thecineoverseas/canada
       PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
@@ -81,33 +67,16 @@ jobs:
         run: |
           if [ -d "canada" ]; then cd canada; fi
           MATRIX_MODE="${{ matrix.mode }}"
-          INPUT_MODE="${{ github.event.inputs.mode }}"
-          CUSTOM_DATE="${{ github.event.inputs.target_date }}"
-          
-          # If manual input specified a single mode (e.g. daily/advance), skip matrix items that don't match
-          if [ -n "$INPUT_MODE" ] && [ "$INPUT_MODE" != "all" ] && [ "$INPUT_MODE" != "$MATRIX_MODE" ]; then
-            echo "⏭️ Skipping matrix mode $MATRIX_MODE due to input request: $INPUT_MODE"
-            exit 0
-          fi
 
-          # If custom target_date was passed via workflow_dispatch
-          if [ -n "$CUSTOM_DATE" ]; then
-            if [ "$MATRIX_MODE" = "advance" ]; then
-              echo "⏭️ Custom target date provided ($CUSTOM_DATE). Skipping advance matrix job to avoid duplicate run."
-              exit 0
-            fi
-            DATES=("$CUSTOM_DATE")
+          # Compute America/Toronto timezone dates
+          TORONTO_DAILY=$(python3 -c 'from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo("America/Toronto")).strftime("%Y-%m-%d"))')
+          TORONTO_ADV1=$(python3 -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo("America/Toronto")) + timedelta(days=1)).strftime("%Y-%m-%d"))')
+          TORONTO_ADV2=$(python3 -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo("America/Toronto")) + timedelta(days=2)).strftime("%Y-%m-%d"))')
+
+          if [ "$MATRIX_MODE" = "daily" ]; then
+            DATES=("$TORONTO_DAILY")
           else
-            # Compute America/Toronto timezone dates
-            TORONTO_DAILY=$(python3 -c 'from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo("America/Toronto")).strftime("%Y-%m-%d"))')
-            TORONTO_ADV1=$(python3 -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo("America/Toronto")) + timedelta(days=1)).strftime("%Y-%m-%d"))')
-            TORONTO_ADV2=$(python3 -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo("America/Toronto")) + timedelta(days=2)).strftime("%Y-%m-%d"))')
-
-            if [ "$MATRIX_MODE" = "daily" ]; then
-              DATES=("$TORONTO_DAILY")
-            else
-              DATES=("$TORONTO_ADV1" "$TORONTO_ADV2")
-            fi
+            DATES=("$TORONTO_ADV1" "$TORONTO_ADV2")
           fi
 
           if [ -f "canada-main.py" ]; then
@@ -141,12 +110,7 @@ jobs:
 
           git add data/ canada/ || git add . || true
 
-          CUSTOM_DATE="${{ github.event.inputs.target_date }}"
-          if [ -n "$CUSTOM_DATE" ]; then
-            git commit -m "[skip ci] target=$CUSTOM_DATE ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
-          else
-            git commit -m "[skip ci] ${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
-          fi
+          git commit -m "[skip ci] ${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
 
           sleep $((RANDOM % 10))
 
