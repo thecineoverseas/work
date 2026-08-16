@@ -1,16 +1,33 @@
-name: CANADA
+name: CANADA BOX OFFICE
 
 on:
-  workflow_dispatch:
+  schedule:
+    - cron: '30 */2 * * *'   # runs every 2 hours
+  workflow_dispatch:          # allow manual trigger
+    inputs:
+      mode:
+        description: 'Scraping mode (all, daily, or advance)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - daily
+          - advance
+      target_date:
+        description: 'Custom target date (YYYY-MM-DD or YYYYMMDD, optional)'
+        required: false
+        default: ''
 
 # 🔥 prevent overlapping runs
 concurrency:
-  group: canada-${{ github.ref }}
+  group: canada-boxoffice-${{ github.ref }}-${{ github.event.inputs.mode || 'all' }}-${{ github.event.inputs.target_date || 'auto' }}
   cancel-in-progress: true
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 240      # 4-hour job cap
 
     strategy:
       fail-fast: false
@@ -18,7 +35,8 @@ jobs:
         mode: [daily, advance]
 
     env:
-      REPO: thecineoverseas/canada
+      REPO: cinenationbo/canada
+      PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
       # 🔒 Clone PRIVATE repo
@@ -35,58 +53,114 @@ jobs:
       # 📦 Install dependencies
       - name: Install dependencies
         run: |
-          cd canada
+          if [ -d "canada" ]; then cd canada; fi
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            pip install requests curl_cffi beautifulsoup4 tabulate aiohttp cloudscraper playwright
+            pip install requests aiohttp cloudscraper playwright pytz tabulate
           fi
-          playwright install chromium
 
-      # 🎬 Run scraper
-      - name: Run scraper
+      # 💾 Cache Playwright browsers
+      - name: Cache Playwright Browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      # 📥 Install Playwright Chromium with dependencies
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: python -m playwright install chromium --with-deps
+
+      # 🎬 Run Canada Scraper using America/Toronto timezone dates
+      - name: Run Canada Scraper (Daily & Advance)
         run: |
-          cd canada
-          MODE="${{ matrix.mode }}"
+          if [ -d "canada" ]; then cd canada; fi
+          MATRIX_MODE="${{ matrix.mode }}"
+          INPUT_MODE="${{ github.event.inputs.mode }}"
+          CUSTOM_DATE="${{ github.event.inputs.target_date }}"
+          
+          # If manual input specified a single mode (e.g. daily/advance), skip matrix items that don't match
+          if [ -n "$INPUT_MODE" ] && [ "$INPUT_MODE" != "all" ] && [ "$INPUT_MODE" != "$MATRIX_MODE" ]; then
+            echo "⏭️ Skipping matrix mode $MATRIX_MODE due to input request: $INPUT_MODE"
+            exit 0
+          fi
 
-          echo "🎬 Running canada.py with mode $MODE"
-
-          for i in {1..6}; do
-            echo "Attempt $i"
-
-            if python canada.py --mode "$MODE"; then
-              echo "✅ Scraper finished successfully"
-              break
+          # If custom target_date was passed via workflow_dispatch
+          if [ -n "$CUSTOM_DATE" ]; then
+            if [ "$MATRIX_MODE" = "advance" ]; then
+              echo "⏭️ Custom target date provided ($CUSTOM_DATE). Skipping advance matrix job to avoid duplicate run."
+              exit 0
             fi
+            DATES=("$CUSTOM_DATE")
+          else
+            # Compute America/Toronto timezone dates
+            TORONTO_DAILY=$(python3 -c 'from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo("America/Toronto")).strftime("%Y-%m-%d"))')
+            TORONTO_ADV1=$(python3 -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo("America/Toronto")) + timedelta(days=1)).strftime("%Y-%m-%d"))')
+            TORONTO_ADV2=$(python3 -c 'from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo("America/Toronto")) + timedelta(days=2)).strftime("%Y-%m-%d"))')
 
-            echo "❌ Scraper failed. Retrying in 10 seconds..."
-            sleep 10
+            if [ "$MATRIX_MODE" = "daily" ]; then
+              DATES=("$TORONTO_DAILY")
+            else
+              DATES=("$TORONTO_ADV1" "$TORONTO_ADV2")
+            fi
+          fi
+
+          if [ -f "canada-main.py" ]; then
+            SCRAPER_SCRIPT="canada-main.py"
+          else
+            SCRAPER_SCRIPT="canada.py"
+          fi
+
+          for RUN_DATE in "${DATES[@]}"; do
+            echo "🎬 Canada Scraper ($SCRAPER_SCRIPT) — mode=$MATRIX_MODE target_date=$RUN_DATE (America/Toronto)"
+            for i in {1..6}; do
+              echo "  Attempt $i for date $RUN_DATE"
+              if python $SCRAPER_SCRIPT --date "$RUN_DATE"; then
+                echo "  ✅ Done for $RUN_DATE"
+                break
+              fi
+              echo "  ❌ Failed for $RUN_DATE. Retrying in 10s..."
+              sleep 10
+            done
           done
 
       # 💾 Commit & Push
       - name: Commit scraper data
         run: |
-          cd canada
+          if [ -d "canada" ]; then cd canada; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add data/
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          git rm -rf --cached __pycache__ 2>/dev/null || true
 
-          git commit -m "[skip ci] ${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+          git add data/ canada/ || git add . || true
+
+          CUSTOM_DATE="${{ github.event.inputs.target_date }}"
+          if [ -n "$CUSTOM_DATE" ]; then
+            git commit -m "[skip ci] target=$CUSTOM_DATE ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+          else
+            git commit -m "[skip ci] ${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+          fi
 
           sleep $((RANDOM % 10))
 
           for i in {1..5}; do
             echo "Push attempt $i"
-
-            git pull --rebase origin main || true
+            git rebase --abort 2>/dev/null || true
+            git pull --rebase --autostash origin main || true
+            find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+            git rm -rf --cached __pycache__ 2>/dev/null || true
 
             if git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
               echo "✅ Push succeeded"
               break
             fi
-
-            echo "❌ Push failed. Retrying in 5 seconds..."
+            echo "❌ Push failed. Retrying in 5s..."
             sleep 5
           done
