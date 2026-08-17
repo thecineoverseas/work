@@ -2,7 +2,7 @@ name: OCEANIA TARGET
 
 on:
   schedule:
-    - cron: "0 */2 * * *"
+    - cron: "20 * * * *"
   workflow_dispatch:
     inputs:
       target_date:
