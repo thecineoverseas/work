@@ -8,7 +8,7 @@ on:
       target_date:
         description: 'Target Date override (optional, YYYY-MM-DD or YYYYMMDD)'
         required: false
-        default: '20260826'
+        default: '20260821'
 
 # 🔥 prevent overlapping runs
 concurrency:
@@ -46,10 +46,10 @@ jobs:
         run: |
           cd aus
           
-          # Set the date - use workflow input or fallback to 20260826
+          # Set the date - use workflow input or fallback to 20260821
           TARGET_DATE="${{ github.event.inputs.target_date }}"
           if [ -z "$TARGET_DATE" ]; then
-            TARGET_DATE="20260826"
+            TARGET_DATE="20260821"
           fi
           
           echo "🎬 Using target date: $TARGET_DATE"
