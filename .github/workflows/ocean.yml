@@ -1,0 +1,130 @@
+name: OCEANIA
+
+on:
+  schedule:
+    # Runs periodically (at minute 15 and 45)
+    - cron: "15,45 * * * *"
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: 'Target Date override (optional, YYYY-MM-DD or YYYYMMDD)'
+        required: false
+        default: ''
+
+# 🔥 prevent overlapping runs
+concurrency:
+  group: oceania-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [daily, advance]
+
+    env:
+      REPO: thecineoverseas/oceania
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      # 🔒 Clone PRIVATE repo
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      # 🐍 Setup Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 📦 Install dependencies
+      - name: Install dependencies
+        run: |
+          cd oceania
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          pip install requests pytz beautifulsoup4 aiohttp tqdm cloudscraper urllib3
+
+      # 🎬 Run Scrapers
+      - name: Run Scrapers
+        run: |
+          cd oceania
+          MODE="${{ matrix.mode }}"
+          TARGET_DATE="${{ github.event.inputs.target_date }}"
+
+          DATE_ARG=""
+          if [ -n "$TARGET_DATE" ]; then
+            DATE_ARG="--date $TARGET_DATE"
+          fi
+
+          echo "=========================================="
+          echo "🎬 Running Oceania Scrapers (Mode: $MODE $DATE_ARG)"
+          echo "=========================================="
+
+          # 1. Run Fiji Scraper
+          if [ -f fiji.py ]; then
+            echo "🇫🇯 Running Fiji Master Tracker (fiji.py)..."
+            for i in {1..5}; do
+              echo "Fiji Attempt $i"
+              if python fiji.py --mode "$MODE" $DATE_ARG; then
+                echo "✅ Fiji finished successfully"
+                break
+              fi
+              echo "❌ Fiji attempt failed. Retrying in 5s..."
+              sleep 5
+            done
+          fi
+
+          # 2. Run Papua New Guinea Scraper
+          if [ -f png.py ]; then
+            echo "🇵🇬 Running Papua New Guinea Master Tracker (png.py)..."
+            for i in {1..5}; do
+              echo "PNG Attempt $i"
+              if python png.py --mode "$MODE" $DATE_ARG; then
+                echo "✅ PNG finished successfully"
+                break
+              fi
+              echo "❌ PNG attempt failed. Retrying in 5s..."
+              sleep 5
+            done
+          fi
+
+      # 💾 Commit & Push
+      - name: Commit scraper data
+        run: |
+          cd oceania
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Clean pycache
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          git rm -rf --cached __pycache__ 2>/dev/null || true
+
+          # Stage ONLY data directory
+          git add data/ || true
+
+          git commit -m "[skip ci] ${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes to commit"
+
+          sleep $((RANDOM % 10))
+
+          for i in {1..6}; do
+            echo "Push attempt $i"
+
+            git pull --rebase --autostash origin main || true
+            find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+            git rm -rf --cached __pycache__ 2>/dev/null || true
+
+            if git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+              echo "✅ Push succeeded"
+              break
+            fi
+
+            echo "❌ Push failed. Retrying in 5 seconds..."
+            sleep 5
+          done
