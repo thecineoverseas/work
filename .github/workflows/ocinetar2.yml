@@ -1,0 +1,120 @@
+name: OCEANIA TARGET 2
+
+on:
+  schedule:
+    - cron: "20 * * * *"
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: 'Target Date override (optional, YYYY-MM-DD or YYYYMMDD)'
+        required: false
+        default: '20260826'
+
+# 🔥 prevent overlapping runs
+concurrency:
+  group: oceania-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    env:
+      REPO: thecineoverseas/aus
+
+    steps:
+      # 🔒 Clone PRIVATE repo
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      # 🐍 Setup Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 📦 Install dependencies
+      - name: Install dependencies
+        run: |
+          cd aus
+          python -m pip install --upgrade pip
+          pip install requests aiohttp aiohttp_retry tqdm cloudscraper tabulate pytz
+
+      # 🎬 Run Scrapers with hardcoded date from workflow
+      - name: Run Scrapers
+        run: |
+          cd aus
+          
+          # Set the date - use workflow input or fallback to 20260826
+          TARGET_DATE="${{ github.event.inputs.target_date }}"
+          if [ -z "$TARGET_DATE" ]; then
+            TARGET_DATE="20260826"
+          fi
+          
+          echo "🎬 Using target date: $TARGET_DATE"
+
+          # Determine correct Australia script filename
+          if [ -f aus.py ]; then
+            SCRAPER_SCRIPT="aus.py"
+          elif [ -f austrila.py ]; then
+            SCRAPER_SCRIPT="austrila.py"
+          else
+            SCRAPER_SCRIPT=""
+          fi
+
+          # Run Australia with date argument
+          if [ -n "$SCRAPER_SCRIPT" ]; then
+            echo "🎬 Running Australia scraper ($SCRAPER_SCRIPT)"
+            for i in {1..6}; do
+              echo "Australia Attempt $i"
+              if python $SCRAPER_SCRIPT --date "$TARGET_DATE"; then
+                echo "✅ Australia finished successfully"
+                break
+              fi
+              echo "❌ Australia failed. Retrying..."
+              sleep 10
+            done
+          fi
+
+          # Run New Zealand with date argument
+          if [ -f nz.py ]; then
+            echo "🎬 Running New Zealand scraper (nz.py)"
+            for i in {1..6}; do
+              echo "New Zealand Attempt $i"
+              if python nz.py --date "$TARGET_DATE"; then
+                echo "✅ New Zealand finished successfully"
+                break
+              fi
+              echo "❌ New Zealand failed. Retrying..."
+              sleep 10
+            done
+          fi
+
+      # 💾 Commit & Push
+      - name: Commit scraper data
+        run: |
+          cd aus
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Add output data path
+          git add data/ || true
+
+          git commit -m " update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+
+          sleep $((RANDOM % 10))
+
+          for i in {1..5}; do
+            echo "Push attempt $i"
+
+            git pull --rebase -X ours origin main || git rebase --abort || true
+
+            if git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+              echo "✅ Push succeeded"
+              break
+            fi
+
+            echo "❌ Push failed. Retrying in 5 seconds..."
+            sleep 5
+          done
