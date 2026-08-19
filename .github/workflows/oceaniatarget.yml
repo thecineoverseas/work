@@ -12,7 +12,7 @@ on:
 
 # 🔥 prevent overlapping runs
 concurrency:
-  group: oceania-${{ github.ref }}
+  group: oceania-t1-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
