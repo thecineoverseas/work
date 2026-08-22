@@ -22,7 +22,7 @@ jobs:
         date: ["20260826"]
 
     env:
-      REPO: cinenationbo/nepal
+      REPO: thecineoverseas/nepal
       PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
