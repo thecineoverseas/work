@@ -105,7 +105,7 @@ jobs:
           find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
           git rm -rf --cached __pycache__ 2>/dev/null || true
 
-          git add data/ canada/ || git add . || true
+          git add  canada/ || git add . || true
 
           git commit -m "${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
 
