@@ -7,7 +7,7 @@ on:
 
 # 🔥 prevent overlapping runs
 concurrency:
-  group: canada-target-2-${{ github.ref }}-${{ github.event.inputs.target_date || 'default' }}
+  group: canada-target-2
   cancel-in-progress: true
 
 jobs:
