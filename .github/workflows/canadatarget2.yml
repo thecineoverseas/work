@@ -1,0 +1,114 @@
+name: CANADA TARGET DATE 2
+
+on:
+  schedule:
+    - cron: '40 */20 * * *'   # runs periodically
+  workflow_dispatch:          # allow manual trigger
+
+# 🔥 prevent overlapping runs
+concurrency:
+  group: canada-target-${{ github.ref }}-${{ github.event.inputs.target_date || 'default' }}
+  cancel-in-progress: true
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240      # 4-hour job cap
+
+    env:
+      REPO: thecineoverseas/canada
+      TARGET_DATE: "20260924"
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      # 🔒 Clone PRIVATE repo
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      # 🐍 Setup Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 📦 Install dependencies
+      - name: Install dependencies
+        run: |
+          if [ -d "canada" ]; then cd canada; fi
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install requests aiohttp cloudscraper playwright pytz tabulate
+          fi
+
+      # 💾 Cache Playwright browsers
+      - name: Cache Playwright Browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      # 📥 Install Playwright Chromium with dependencies
+      - name: Install Playwright Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: python -m playwright install chromium --with-deps
+
+      # 🎬 Run Scraper
+      - name: Run Canada Scraper
+        run: |
+          if [ -d "canada" ]; then cd canada; fi
+          RUN_DATE="${{ github.event.inputs.target_date || env.TARGET_DATE }}"
+          
+          if [ -f "canada-main.py" ]; then
+            SCRAPER_SCRIPT="canada-main.py"
+          else
+            SCRAPER_SCRIPT="canada.py"
+          fi
+
+          echo "🎬 Canada Scraper ($SCRAPER_SCRIPT) — target date=$RUN_DATE"
+          for i in {1..6}; do
+            echo "  Attempt $i for date $RUN_DATE"
+            if python $SCRAPER_SCRIPT --date "$RUN_DATE"; then
+              echo "  ✅ Done for $RUN_DATE"
+              break
+            fi
+            echo "  ❌ Failed for $RUN_DATE. Retrying in 10s..."
+            sleep 10
+          done
+
+      # 💾 Commit & Push
+      - name: Commit scraper data
+        run: |
+          if [ -d "canada" ]; then cd canada; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          git rm -rf --cached __pycache__ 2>/dev/null || true
+
+          git add data/ canada/ || git add . || true
+
+          RUN_DATE="${{ github.event.inputs.target_date || env.TARGET_DATE }}"
+          git commit -m "target=$RUN_DATE ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+
+          sleep $((RANDOM % 10))
+
+          for i in {1..5}; do
+            echo "Push attempt $i"
+            git rebase --abort 2>/dev/null || true
+            git pull --rebase --autostash origin main || true
+            find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+            git rm -rf --cached __pycache__ 2>/dev/null || true
+
+            if git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+              echo "✅ Push succeeded"
+              break
+            fi
+            echo "❌ Push failed. Retrying in 5s..."
+            sleep 5
+          done
