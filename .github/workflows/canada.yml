@@ -1,13 +1,12 @@
 name: CANADA BOX OFFICE
 
 on:
-  schedule:
-    - cron: '30 */2 * * *'   # runs every 2 hours
+   # runs every 2 hours
   workflow_dispatch:          # allow manual trigger
 
 # 🔥 prevent overlapping runs per shard
 concurrency:
-  group: canada-boxoffice-${{ github.ref }
+  group: canada-boxoffice
   cancel-in-progress: true
 
 jobs:
