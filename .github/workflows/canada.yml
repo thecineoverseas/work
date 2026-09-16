@@ -7,7 +7,7 @@ on:
 
 # 🔥 prevent overlapping runs per shard
 concurrency:
-  group: canada-boxoffice-${{ github.ref }}
+  group: canada-boxoffice-${{ github.ref }}-${{ matrix.mode }}
   cancel-in-progress: true
 
 jobs:
@@ -47,15 +47,18 @@ jobs:
             pip install requests aiohttp cloudscraper playwright pytz tabulate
           fi
 
+      # 🔍 Get Playwright Version
+      - name: Get Playwright Version
+        id: playwright-version
+        run: echo "version=$(python -c 'import playwright; print(playwright.__version__)')" >> $GITHUB_OUTPUT
+
       # 💾 Cache Playwright browsers
       - name: Cache Playwright Browsers
         id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
 
       # 📥 Install Playwright Chromium with dependencies
       - name: Install Playwright Chromium
@@ -105,7 +108,7 @@ jobs:
           find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
           git rm -rf --cached __pycache__ 2>/dev/null || true
 
-          git add  canada/ || git add . || true
+          git add canada/ || git add . || true
 
           git commit -m "${{ matrix.mode }} update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
 
@@ -114,7 +117,7 @@ jobs:
           for i in {1..5}; do
             echo "Push attempt $i"
             git rebase --abort 2>/dev/null || true
-            git pull --rebase --autostash origin main || true
+            git pull --rebase -X theirs --autostash origin main || git pull --rebase -X ours origin main || true
             find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
             git rm -rf --cached __pycache__ 2>/dev/null || true
 
