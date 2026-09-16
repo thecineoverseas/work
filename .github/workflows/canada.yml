@@ -7,7 +7,7 @@ on:
 
 # 🔥 prevent overlapping runs per shard
 concurrency:
-  group: canada-boxoffice-${{ github.ref }}-${{ matrix.mode }}
+  group: canada-boxoffice-${{ github.ref }
   cancel-in-progress: true
 
 jobs:
