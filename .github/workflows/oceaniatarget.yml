@@ -8,7 +8,7 @@ on:
       target_date:
         description: 'Target Date override (optional, YYYY-MM-DD or YYYYMMDD)'
         required: false
-        default: '20260903'
+        default: '20260924'
 
 # 🔥 prevent overlapping runs
 concurrency:
