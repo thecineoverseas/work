@@ -1,14 +1,13 @@
-name: OVERSEAS TARGET DATE (Qatar, Nepal, Malaysia, Singapore, Aus, NZ)
+name: OVERSEAS TARGET DATE (Qatar, Nepal, Malaysia, Singapore, Oceania)
 
 on:
   schedule:
     - cron: '*/40 * * * *'   # Runs every 40 minutes
   workflow_dispatch:          # Allows manual trigger with custom target date
 
-
 # Prevent overlapping runs (scoped per target country)
 concurrency:
-  group: overseas-target-${{ github.ref }}-${{ github.event.inputs.target_date || 'default' }}
+  group: overseas-target-${{ github.ref }}-${{ matrix.target.name }}-${{ github.event.inputs.target_date || 'default' }}
   cancel-in-progress: true
 
 jobs:
@@ -39,14 +38,9 @@ jobs:
             script: singapore.py
             folder: singapore
             fallback_name: singapore
-          - name: Australia
+          - name: Oceania
             repo: thecineoverseas/aus
-            script: aus.py
-            folder: aus
-            fallback_name: aus
-          - name: New Zealand
-            repo: thecineoverseas/aus
-            script: nz.py
+            script: aus_nz
             folder: aus
             fallback_name: aus
         date: ["20260924"]
@@ -122,27 +116,62 @@ jobs:
             cd Qatar
           fi
 
-          SCRIPTPATH="${{ matrix.target.script }}"
-          if [ ! -f "$SCRIPTPATH" ]; then
-            if [ "$SCRIPTPATH" = "aus.py" ] && [ -f "austrila.py" ]; then
-              SCRIPTPATH="austrila.py"
-            fi
-          fi
-
           RUN_DATE="${{ github.event.inputs.target_date || matrix.date }}"
-          echo "🎬 Running ${{ matrix.target.name }} [Target Date: $RUN_DATE]: python $SCRIPTPATH --mode advance --date $RUN_DATE"
 
-          SUCCESS=false
-          for i in {1..6}; do
-            echo "▶️ Attempt $i..."
-            if xvfb-run -a python "$SCRIPTPATH" --mode advance --date "$RUN_DATE" || xvfb-run -a python "$SCRIPTPATH" --date "$RUN_DATE"; then
-              echo "✅ ${{ matrix.target.name }} scraper finished successfully"
-              SUCCESS=true
-              break
+          if [ "${{ matrix.target.script }}" = "aus_nz" ]; then
+            # 🇦🇺 Run Australia (aus.py / austrila.py) first
+            if [ -f aus.py ]; then
+              AU_SCRIPT="aus.py"
+            elif [ -f austrila.py ]; then
+              AU_SCRIPT="austrila.py"
+            else
+              AU_SCRIPT=""
             fi
-            echo "❌ Attempt $i failed. Retrying in 10 seconds..."
-            sleep 10
-          done
+
+            if [ -n "$AU_SCRIPT" ]; then
+              echo "🎬 Running Australia ($AU_SCRIPT) [Target Date: $RUN_DATE]"
+              for i in {1..6}; do
+                echo "▶️ Australia Attempt $i..."
+                if xvfb-run -a python "$AU_SCRIPT" --mode advance --date "$RUN_DATE" || xvfb-run -a python "$AU_SCRIPT" --date "$RUN_DATE"; then
+                  echo "✅ Australia scraper finished successfully"
+                  break
+                fi
+                echo "❌ Australia attempt $i failed. Retrying in 10 seconds..."
+                sleep 10
+              done
+            fi
+
+            # 🇳🇿 Run New Zealand (nz.py) right after
+            if [ -f nz.py ]; then
+              echo "🎬 Running New Zealand (nz.py) [Target Date: $RUN_DATE]"
+              for i in {1..6}; do
+                echo "▶️ New Zealand Attempt $i..."
+                if xvfb-run -a python nz.py --mode advance --date "$RUN_DATE" || xvfb-run -a python nz.py --date "$RUN_DATE"; then
+                  echo "✅ New Zealand scraper finished successfully"
+                  break
+                fi
+                echo "❌ New Zealand attempt $i failed. Retrying in 10 seconds..."
+                sleep 10
+              done
+            fi
+
+          else
+            # Standard single country scraper
+            SCRIPTPATH="${{ matrix.target.script }}"
+            echo "🎬 Running ${{ matrix.target.name }} [Target Date: $RUN_DATE]: python $SCRIPTPATH --mode advance --date $RUN_DATE"
+
+            SUCCESS=false
+            for i in {1..6}; do
+              echo "▶️ Attempt $i..."
+              if xvfb-run -a python "$SCRIPTPATH" --mode advance --date "$RUN_DATE" || xvfb-run -a python "$SCRIPTPATH" --date "$RUN_DATE"; then
+                echo "✅ ${{ matrix.target.name }} scraper finished successfully"
+                SUCCESS=true
+                break
+              fi
+              echo "❌ Attempt $i failed. Retrying in 10 seconds..."
+              sleep 10
+            done
+          fi
 
       # 7. Commit & Push Scraper Data directly back to target repo
       - name: Commit & Push Data
