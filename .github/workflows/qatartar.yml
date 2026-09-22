@@ -7,7 +7,7 @@ on:
 
 # 🔥 prevent overlapping runs
 concurrency:
-  group: qatar-target
+  group: qatar-target-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
         date: ["20260924"]
 
     env:
-      REPO: thecineoverseas/qatar
+      REPO: cinenationbo/qatar
       PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
