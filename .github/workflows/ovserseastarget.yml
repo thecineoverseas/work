@@ -1,4 +1,4 @@
-name: OVERSEAS TARGET DATE (Qatar, Nepal, Malaysia, Singapore, Oceania)
+name: OVERSEAS TARGET DATE (Qatar, Kuwait, Nepal, Malaysia, Singapore, Oceania)
 
 on:
   schedule:
@@ -23,6 +23,11 @@ jobs:
             script: qatar.py
             folder: qatar
             fallback_name: qatar
+          - name: Kuwait
+            repo: thecineoverseas/kuwait
+            script: kuwait.py
+            folder: kuwait
+            fallback_name: kuwait
           - name: Nepal
             repo: thecineoverseas/nepal
             script: nepal.py
@@ -67,25 +72,13 @@ jobs:
           fi
           echo "CLONED_REPO=$CLONED_REPO" >> $GITHUB_ENV
 
-      # 2. Start FlareSolverr Service
-      - name: Start FlareSolverr Service
-        run: |
-          docker run -d \
-            --name=flaresolverr \
-            -p 8191:8191 \
-            -e LOG_LEVEL=info \
-            --restart unless-stopped \
-            ghcr.io/flaresolverr/flaresolverr:latest
-          echo "Waiting for FlareSolverr to initialize..."
-          sleep 10
-
-      # 3. Setup Python
+      # 2. Setup Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # 4. Install Dependencies
+      # 3. Install Dependencies (lightweight - no Playwright/FlareSolverr overhead)
       - name: Install Dependencies
         run: |
           cd repo_dir
@@ -96,17 +89,11 @@ jobs:
           fi
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          else
-            pip install requests curl_cffi beautifulsoup4 tabulate playwright pycryptodome cryptography python-dateutil pytz cloudscraper aiohttp aiohttp_retry tqdm
+            pip install -r requirements.txt || true
           fi
-          pip install playwright xvfbwrapper || true
+          pip install requests curl_cffi beautifulsoup4 tabulate python-dateutil pytz cloudscraper aiohttp aiohttp_retry tqdm urllib3
 
-      # 5. Install Playwright Chromium with dependencies
-      - name: Install Playwright Chromium
-        run: python -m playwright install chromium --with-deps || true
-
-      # 6. Run Scraper for Target Date
+      # 4. Run Scraper for Target Date
       - name: Run Target Date Scraper
         run: |
           cd repo_dir
@@ -132,7 +119,7 @@ jobs:
               echo "🎬 Running Australia ($AU_SCRIPT) [Target Date: $RUN_DATE]"
               for i in {1..6}; do
                 echo "▶️ Australia Attempt $i..."
-                if xvfb-run -a python "$AU_SCRIPT" --mode advance --date "$RUN_DATE" || xvfb-run -a python "$AU_SCRIPT" --date "$RUN_DATE"; then
+                if python "$AU_SCRIPT" --mode advance --date "$RUN_DATE" || python "$AU_SCRIPT" --date "$RUN_DATE"; then
                   echo "✅ Australia scraper finished successfully"
                   break
                 fi
@@ -146,7 +133,7 @@ jobs:
               echo "🎬 Running New Zealand (nz.py) [Target Date: $RUN_DATE]"
               for i in {1..6}; do
                 echo "▶️ New Zealand Attempt $i..."
-                if xvfb-run -a python nz.py --mode advance --date "$RUN_DATE" || xvfb-run -a python nz.py --date "$RUN_DATE"; then
+                if python nz.py --mode advance --date "$RUN_DATE" || python nz.py --date "$RUN_DATE"; then
                   echo "✅ New Zealand scraper finished successfully"
                   break
                 fi
@@ -163,7 +150,7 @@ jobs:
             SUCCESS=false
             for i in {1..6}; do
               echo "▶️ Attempt $i..."
-              if xvfb-run -a python "$SCRIPTPATH" --mode advance --date "$RUN_DATE" || xvfb-run -a python "$SCRIPTPATH" --date "$RUN_DATE"; then
+              if python "$SCRIPTPATH" --mode advance --date "$RUN_DATE" || python "$SCRIPTPATH" --date "$RUN_DATE"; then
                 echo "✅ ${{ matrix.target.name }} scraper finished successfully"
                 SUCCESS=true
                 break
@@ -173,7 +160,7 @@ jobs:
             done
           fi
 
-      # 7. Commit & Push Scraper Data directly back to target repo
+      # 5. Commit & Push Scraper Data directly back to target repo
       - name: Commit & Push Data
         run: |
           cd repo_dir
