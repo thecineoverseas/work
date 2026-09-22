@@ -21,7 +21,7 @@ jobs:
         date: ["20260924"]
 
     env:
-      REPO: cinenationbo/qatar
+      REPO: thecineoverseas/qatar
       PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
