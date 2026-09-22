@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        date: ["20260814"]
+        date: ["20260924"]
 
     env:
       REPO: thecineoverseas/qatar
