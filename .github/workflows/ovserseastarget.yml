@@ -7,7 +7,7 @@ on:
 
 # Prevent overlapping runs (scoped per target country)
 concurrency:
-  group: overseas-target-${{ github.ref }}-${{ matrix.target.name }}-${{ github.event.inputs.target_date || 'default' }}
+  group: overseas-target-${{ github.ref }}-${{ github.event.inputs.target_date || 'default' }}
   cancel-in-progress: true
 
 jobs:
