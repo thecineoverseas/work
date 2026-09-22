@@ -1,94 +1,194 @@
-name: KUWAIT TARGET DATE
+name: OVERSEAS TARGET DATE (Qatar, Kuwait, Nepal, Malaysia, Singapore, Oceania)
 
 on:
   schedule:
-    - cron: '*/40 * * * *'   # runs every 40 minutes
-  workflow_dispatch:          # also allow manual trigger
+    - cron: '*/40 * * * *'   # Runs every 40 minutes
+  workflow_dispatch:          # Allows manual trigger with custom target date
 
-# 🔥 prevent overlapping runs
+# Prevent overlapping runs (scoped per target country)
 concurrency:
-  group: kuwait-target-${{ github.ref }}
+  group: overseas-target-${{ github.ref }}-${{ matrix.target.name }}-${{ github.event.inputs.target_date || 'default' }}
   cancel-in-progress: true
 
 jobs:
-  scrape:
+  scrape-target-date:
     runs-on: ubuntu-latest
-    timeout-minutes: 240      # 4-hour job cap
 
     strategy:
       fail-fast: false
       matrix:
+        target:
+          - name: Qatar
+            repo: thecineoverseas/qatar
+            script: qatar.py
+            folder: qatar
+            fallback_name: qatar
+          - name: Kuwait
+            repo: thecineoverseas/kuwait
+            script: kuwait.py
+            folder: kuwait
+            fallback_name: kuwait
+          - name: Nepal
+            repo: thecineoverseas/nepal
+            script: nepal.py
+            folder: nepal
+            fallback_name: nepal
+          - name: Malaysia
+            repo: thecineoverseas/malaysia
+            script: malaysia.py
+            folder: malaysia
+            fallback_name: malaysia
+          - name: Singapore
+            repo: thecineoverseas/singapore
+            script: singapore.py
+            folder: singapore
+            fallback_name: singapore
+          - name: Oceania
+            repo: thecineoverseas/aus
+            script: aus_nz
+            folder: aus
+            fallback_name: aus
         date: ["20260924"]
 
     env:
-      REPO: thecineoverseas/kuwait
       PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
-      # 🔒 Clone PRIVATE repo
+      # 1. Clone Private Target Repository directly into repo_dir with fallback
       - name: Clone Private Repo
         run: |
-          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+          CLONED_REPO="${{ matrix.target.repo }}"
+          if git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ matrix.target.repo }}.git repo_dir; then
+            echo "✅ Successfully cloned from ${{ matrix.target.repo }}"
+          elif git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/cinenationbo/${{ matrix.target.fallback_name }}.git repo_dir; then
+            CLONED_REPO="cinenationbo/${{ matrix.target.fallback_name }}"
+            echo "✅ Successfully cloned from fallback: $CLONED_REPO"
+          elif git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/thecineoverseas/${{ matrix.target.fallback_name }}.git repo_dir; then
+            CLONED_REPO="thecineoverseas/${{ matrix.target.fallback_name }}"
+            echo "✅ Successfully cloned from fallback: $CLONED_REPO"
+          else
+            echo "❌ Failed to clone repository"
+            exit 1
+          fi
+          echo "CLONED_REPO=$CLONED_REPO" >> $GITHUB_ENV
 
-      # 🐍 Setup Python
+      # 2. Setup Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # 📦 Install dependencies
-      - name: Install dependencies
+      # 3. Install Dependencies (lightweight - no Playwright/FlareSolverr overhead)
+      - name: Install Dependencies
         run: |
-          cd kuwait
+          cd repo_dir
+          if [ -d "${{ matrix.target.folder }}" ] && [ ! -f "${{ matrix.target.script }}" ]; then
+            cd "${{ matrix.target.folder }}"
+          elif [ -d "Qatar" ] && [ ! -f "${{ matrix.target.script }}" ]; then
+            cd Qatar
+          fi
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
+            pip install -r requirements.txt || true
+          fi
+          pip install requests curl_cffi beautifulsoup4 tabulate python-dateutil pytz cloudscraper aiohttp aiohttp_retry tqdm urllib3
+
+      # 4. Run Scraper for Target Date
+      - name: Run Target Date Scraper
+        run: |
+          cd repo_dir
+          if [ -d "${{ matrix.target.folder }}" ] && [ ! -f "${{ matrix.target.script }}" ]; then
+            cd "${{ matrix.target.folder }}"
+          elif [ -d "Qatar" ] && [ ! -f "${{ matrix.target.script }}" ]; then
+            cd Qatar
           fi
 
-      # 🎬 Run scraper
-      - name: Run scraper
-        run: |
-          cd kuwait
-          RUN_DATE="${{ matrix.date }}"
-          MODE="advance"
+          RUN_DATE="${{ github.event.inputs.target_date || matrix.date }}"
 
-          echo "🎬 Running kuwait.py with mode $MODE and date $RUN_DATE"
-
-          for i in {1..6}; do
-            echo "Attempt $i"
-
-            if python kuwait.py --mode "$MODE" --date "$RUN_DATE"; then
-              echo "✅ Scraper finished successfully"
-              break
+          if [ "${{ matrix.target.script }}" = "aus_nz" ]; then
+            # 🇦🇺 Run Australia (aus.py / austrila.py) first
+            if [ -f aus.py ]; then
+              AU_SCRIPT="aus.py"
+            elif [ -f austrila.py ]; then
+              AU_SCRIPT="austrila.py"
+            else
+              AU_SCRIPT=""
             fi
 
-            echo "❌ Scraper failed. Retrying in 10 seconds..."
-            sleep 10
-          done
+            if [ -n "$AU_SCRIPT" ]; then
+              echo "🎬 Running Australia ($AU_SCRIPT) [Target Date: $RUN_DATE]"
+              for i in {1..6}; do
+                echo "▶️ Australia Attempt $i..."
+                if python "$AU_SCRIPT" --mode advance --date "$RUN_DATE" || python "$AU_SCRIPT" --date "$RUN_DATE"; then
+                  echo "✅ Australia scraper finished successfully"
+                  break
+                fi
+                echo "❌ Australia attempt $i failed. Retrying in 10 seconds..."
+                sleep 10
+              done
+            fi
 
-      # 💾 Commit & Push
-      - name: Commit scraper data
+            # 🇳🇿 Run New Zealand (nz.py) right after
+            if [ -f nz.py ]; then
+              echo "🎬 Running New Zealand (nz.py) [Target Date: $RUN_DATE]"
+              for i in {1..6}; do
+                echo "▶️ New Zealand Attempt $i..."
+                if python nz.py --mode advance --date "$RUN_DATE" || python nz.py --date "$RUN_DATE"; then
+                  echo "✅ New Zealand scraper finished successfully"
+                  break
+                fi
+                echo "❌ New Zealand attempt $i failed. Retrying in 10 seconds..."
+                sleep 10
+              done
+            fi
+
+          else
+            # Standard single country scraper
+            SCRIPTPATH="${{ matrix.target.script }}"
+            echo "🎬 Running ${{ matrix.target.name }} [Target Date: $RUN_DATE]: python $SCRIPTPATH --mode advance --date $RUN_DATE"
+
+            SUCCESS=false
+            for i in {1..6}; do
+              echo "▶️ Attempt $i..."
+              if python "$SCRIPTPATH" --mode advance --date "$RUN_DATE" || python "$SCRIPTPATH" --date "$RUN_DATE"; then
+                echo "✅ ${{ matrix.target.name }} scraper finished successfully"
+                SUCCESS=true
+                break
+              fi
+              echo "❌ Attempt $i failed. Retrying in 10 seconds..."
+              sleep 10
+            done
+          fi
+
+      # 5. Commit & Push Scraper Data directly back to target repo
+      - name: Commit & Push Data
         run: |
-          cd kuwait
+          cd repo_dir
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add data/
+          # Remove bytecode caches
+          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          git rm -rf --cached __pycache__ 2>/dev/null || true
 
-          git commit -m "target=${{ matrix.date }} advance ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+          git add data/ || git add . || true
+
+          RUN_DATE="${{ github.event.inputs.target_date || matrix.date }}"
+          git commit -m "target date $RUN_DATE update ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
 
           sleep $((RANDOM % 10))
 
           for i in {1..5}; do
             echo "Push attempt $i"
+            git rebase --abort 2>/dev/null || true
+            git pull --rebase --autostash origin main || true
+            find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+            git rm -rf --cached __pycache__ 2>/dev/null || true
 
-            git pull --rebase origin main || true
-
-            if git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
-              echo "✅ Push succeeded"
+            if git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.CLONED_REPO }}.git; then
+              echo "✅ Push succeeded to ${{ env.CLONED_REPO }}"
               break
             fi
-
             echo "❌ Push failed. Retrying in 5 seconds..."
             sleep 5
           done
