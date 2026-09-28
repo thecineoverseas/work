@@ -1,8 +1,6 @@
 name: CANADA TARGET DATE
 
-on:
-  schedule:
-    - cron: '*/40 * * * *'   # runs periodically
+on:   # runs periodically
   workflow_dispatch:          # allow manual trigger
 
 # 🔥 prevent overlapping runs
