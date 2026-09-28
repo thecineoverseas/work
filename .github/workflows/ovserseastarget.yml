@@ -48,7 +48,7 @@ jobs:
             script: aus_nz
             folder: aus
             fallback_name: aus
-        date: ["20260924"]
+        date: ["20261002"]
 
     env:
       PYTHONDONTWRITEBYTECODE: "1"
