@@ -47,6 +47,11 @@ jobs:
             script: aus_nz
             folder: aus
             fallback_name: aus
+          - name: Denmark
+            repo: thecineoverseas/denamark
+            script: denmark.py
+            folder: denmark
+            fallback_name: denamark
 
     env:
       PYTHONDONTWRITEBYTECODE: "1"
@@ -89,7 +94,7 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt || true
           fi
-          pip install requests curl_cffi beautifulsoup4 tabulate python-dateutil pytz cloudscraper aiohttp aiohttp_retry tqdm urllib3
+          pip install requests curl_cffi beautifulsoup4 tabulate python-dateutil pytz cloudscraper aiohttp aiohttp_retry tqdm urllib3 Pillow numpy scipy
 
       # 4. Run Advance Scraper
       - name: Run Advance Scraper
@@ -141,6 +146,19 @@ jobs:
           else
             # Standard single country scraper
             SCRIPTPATH="${{ matrix.target.script }}"
+            if [ ! -f "$SCRIPTPATH" ]; then
+              if [ -f "denmark.py" ]; then
+                SCRIPTPATH="denmark.py"
+              elif [ -f "denmark/denmark.py" ]; then
+                SCRIPTPATH="denmark/denmark.py"
+              elif [ -f "denamark/denmark.py" ]; then
+                SCRIPTPATH="denamark/denmark.py"
+              elif [ -f "ayngaran.py" ]; then
+                SCRIPTPATH="ayngaran.py"
+              elif [ -f "denmark/ayngaran.py" ]; then
+                SCRIPTPATH="denmark/ayngaran.py"
+              fi
+            fi
             echo "🎬 Running ${{ matrix.target.name }} [Mode: advance]: python $SCRIPTPATH --mode advance"
 
             SUCCESS=false
@@ -187,3 +205,4 @@ jobs:
             echo "❌ Push failed. Retrying in 5 seconds..."
             sleep 5
           done
+  
