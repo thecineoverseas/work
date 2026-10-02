@@ -48,6 +48,10 @@ jobs:
             script: aus_nz
             folder: aus
             fallback_name: aus
+          - name : denamark
+            repo : thecineoverseas/denamark
+            script: denamark
+            folder: denamark
 
     env:
       PYTHONDONTWRITEBYTECODE: "1"
