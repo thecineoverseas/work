@@ -53,7 +53,7 @@ jobs:
             script: denmark.py
             folder: denmark
             fallback_name: denamark
-        date: ["20261009"]
+        date: ["20261015"]
 
     env:
       PYTHONDONTWRITEBYTECODE: "1"
