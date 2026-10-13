@@ -39,7 +39,7 @@ jobs:
         run: |
           cd aus
           python -m pip install --upgrade pip
-          pip install requests aiohttp aiohttp_retry tqdm cloudscraper tabulate pytz
+          pip install requests aiohttp aiohttp_retry tqdm cloudscraper tabulate pytz beautifulsoup4 
 
       # 🎬 Run Scrapers with hardcoded date from workflow
       - name: Run Scrapers
