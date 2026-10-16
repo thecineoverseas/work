@@ -15,7 +15,7 @@ jobs:
 
     env:
       REPO: thecineoverseas/canada
-      TARGET_DATE: "20261015"
+      TARGET_DATE: "20261104"
       PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
