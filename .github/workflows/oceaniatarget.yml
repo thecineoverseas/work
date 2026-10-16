@@ -68,7 +68,7 @@ jobs:
             echo "🎬 Running Australia scraper ($SCRAPER_SCRIPT)"
             for i in {1..6}; do
               echo "Australia Attempt $i"
-              if python $SCRAPER_SCRIPT --date "$TARGET_DATE" --days 1; then
+              if python $SCRAPER_SCRIPT --date "$TARGET_DATE"; then
                 echo "✅ Australia finished successfully"
                 break
               fi
@@ -82,7 +82,7 @@ jobs:
             echo "🎬 Running New Zealand scraper (nz.py)"
             for i in {1..6}; do
               echo "New Zealand Attempt $i"
-              if python nz.py --date "$TARGET_DATE" --days 1; then
+              if python nz.py --date "$TARGET_DATE"; then
                 echo "✅ New Zealand finished successfully"
                 break
               fi
