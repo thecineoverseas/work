@@ -1,41 +1,54 @@
+
 name: CANADA TARGET DATE 2
 
 on:
   schedule:
-    - cron: '*/40 * * * *'   # runs periodically
-  workflow_dispatch:          # allow manual trigger
+    - cron: '*/40 * * * *'
+  workflow_dispatch:
+  
+permissions:
+  contents: read
 
-# 🔥 prevent overlapping runs
 concurrency:
-  group: canada-target-2-${{ github.ref }}-${{ github.event.inputs.target_date || 'default' }}
-  cancel-in-progress: true
+  group: canada-target-date-2-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   scrape:
+    name: Canada Target ${{ matrix.target_date }}
     runs-on: ubuntu-latest
-    timeout-minutes: 240      # 4-hour job cap
+    timeout-minutes: 240
+
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        target_date: ["20261105", "20261106"]
 
     env:
       REPO: thecineoverseas/canada
-      TARGET_DATE: "20261014"
+      TARGET_DATE: ${{ matrix.target_date }}
       PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
 
     steps:
-      # 🔒 Clone PRIVATE repo
       - name: Clone Private Repo
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+          git clone --depth=1 \
+            "https://x-access-token:${GH_PAT}@github.com/${REPO}.git" canada
+          cd canada
+          git remote set-url origin "https://github.com/${REPO}.git"
 
-      # 🐍 Setup Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      # 📦 Install dependencies
-      - name: Install dependencies
+      - name: Install Dependencies
+        working-directory: canada
         run: |
-          if [ -d "canada" ]; then cd canada; fi
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
@@ -43,12 +56,12 @@ jobs:
             pip install requests aiohttp cloudscraper playwright pytz tabulate
           fi
 
-      # 🔍 Get Playwright Version
       - name: Get Playwright Version
         id: playwright-version
-        run: echo "version=$(python -c 'import playwright; print(playwright.__version__)')" >> $GITHUB_OUTPUT
+        working-directory: canada
+        run: |
+          echo "version=$(python -c 'import importlib.metadata as m; print(m.version("playwright"))')" >> "$GITHUB_OUTPUT"
 
-      # 💾 Cache Playwright browsers
       - name: Cache Playwright Browsers
         id: playwright-cache
         uses: actions/cache@v4
@@ -56,62 +69,133 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
 
-      # 📥 Install Playwright Chromium with dependencies
       - name: Install Playwright Chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: python -m playwright install chromium --with-deps
 
-      # 🎬 Run Scraper
       - name: Run Canada Scraper
+        id: scraper
+        working-directory: canada
+        env:
+          MANUAL_TARGET_DATE: ${{ inputs.target_date }}
         run: |
-          if [ -d "canada" ]; then cd canada; fi
-          RUN_DATE="${{ github.event.inputs.target_date || env.TARGET_DATE }}"
-          
-          if [ -f "canada-main.py" ]; then
-            SCRAPER_SCRIPT="canada-main.py"
-          else
-            SCRAPER_SCRIPT="canada.py"
+          set -uo pipefail
+
+          RUN_DATE="${MANUAL_TARGET_DATE:-$TARGET_DATE}"
+
+          if [[ ! "$RUN_DATE" =~ ^[0-9]{8}$ ]]; then
+            echo "Invalid target date: $RUN_DATE"
+            exit 1
           fi
 
-          echo "🎬 Canada Scraper ($SCRAPER_SCRIPT) — target date=$RUN_DATE"
-          for i in {1..6}; do
-            echo "  Attempt $i for date $RUN_DATE"
-            if python $SCRAPER_SCRIPT --date "$RUN_DATE"; then
-              echo "  ✅ Done for $RUN_DATE"
-              break
+          if [ -f canada-main.py ]; then
+            SCRAPER_SCRIPT="canada-main.py"
+          elif [ -f canada.py ]; then
+            SCRAPER_SCRIPT="canada.py"
+          else
+            echo "Canada scraper script not found"
+            exit 1
+          fi
+
+          echo "Canada Scraper: $SCRAPER_SCRIPT"
+          echo "Target Date: $RUN_DATE"
+
+          for attempt in {1..6}; do
+            echo "Attempt $attempt/6 for $RUN_DATE"
+
+            if python "$SCRAPER_SCRIPT" --date "$RUN_DATE"; then
+              echo "Scraper completed successfully"
+              exit 0
             fi
-            echo "  ❌ Failed for $RUN_DATE. Retrying in 10s..."
-            sleep 10
+
+            if [ "$attempt" -lt 6 ]; then
+              echo "Scraper failed. Retrying in 10 seconds..."
+              sleep 10
+            fi
           done
 
-      # 💾 Commit & Push
-      - name: Commit scraper data
+          echo "Scraper failed after 6 attempts"
+          exit 1
+
+      - name: Commit and Push Data
+        if: always()
+        working-directory: canada
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          MANUAL_TARGET_DATE: ${{ inputs.target_date }}
+          SCRAPER_OUTCOME: ${{ steps.scraper.outcome }}
         run: |
-          if [ -d "canada" ]; then cd canada; fi
+          set -uo pipefail
+
+          RUN_DATE="${MANUAL_TARGET_DATE:-$TARGET_DATE}"
+
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
 
-          find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-          git rm -rf --cached __pycache__ 2>/dev/null || true
+          find . -type d -name "__pycache__" \
+            -prune -exec rm -rf {} + 2>/dev/null || true
 
-          git add canada/ || git add . || true
+          git rm -r --cached --ignore-unmatch \
+            -- '*/__pycache__/*' '__pycache__/*' \
+            >/dev/null 2>&1 || true
 
-          RUN_DATE="${{ github.event.inputs.target_date || env.TARGET_DATE }}"
-          git commit -m "target=$RUN_DATE ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))" || echo "No changes"
+          git add -A
 
-          sleep $((RANDOM % 10))
+          if ! git diff --cached --quiet; then
+            git commit -m \
+              "Canada target=${RUN_DATE} ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+          else
+            echo "No new changes to commit"
+          fi
 
-          for i in {1..5}; do
-            echo "Push attempt $i"
-            git rebase --abort 2>/dev/null || true
-            git pull --rebase -X theirs --autostash origin main || git pull --rebase -X ours origin main || true
-            find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-            git rm -rf --cached __pycache__ 2>/dev/null || true
+          git remote set-url origin "https://github.com/${REPO}.git"
 
-            if git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
-              echo "✅ Push succeeded"
+          PUSHED=false
+
+          for attempt in {1..10}; do
+            echo "Push attempt $attempt/10 for $RUN_DATE"
+
+            if ! git fetch origin main; then
+              echo "Fetch failed"
+              sleep $((attempt * 3))
+              continue
+            fi
+
+            if ! git rebase origin/main; then
+              echo "Rebase conflict. Aborting and retrying."
+              git rebase --abort || true
+              sleep $((attempt * 3))
+              continue
+            fi
+
+            if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
+              echo "Remote already contains all local commits"
+              PUSHED=true
               break
             fi
-            echo "❌ Push failed. Retrying in 5s..."
-            sleep 5
+
+            AUTH_HEADER="$(printf 'x-access-token:%s' "$GH_PAT" | base64 -w 0)"
+
+            if git -c "http.extraheader=AUTHORIZATION: basic ${AUTH_HEADER}" \
+              push origin HEAD:main; then
+              echo "Push succeeded"
+              PUSHED=true
+              break
+            fi
+
+            echo "Push failed. Retrying in $((attempt * 3)) seconds..."
+            sleep $((attempt * 3))
           done
+
+          if [ "$PUSHED" != "true" ]; then
+            echo "Push failed after 10 attempts"
+            exit 1
+          fi
+
+          if [ "$SCRAPER_OUTCOME" != "success" ]; then
+            echo "Scraper outcome: $SCRAPER_OUTCOME"
+            exit 1
+          fi
+
+          echo "Completed target date $RUN_DATE"
