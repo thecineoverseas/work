@@ -1,11 +1,11 @@
-
 name: CANADA TARGET DATE 2
 
 on:
   schedule:
     - cron: '*/40 * * * *'
   workflow_dispatch:
-  
+
+
 permissions:
   contents: read
 
@@ -38,8 +38,9 @@ jobs:
         run: |
           git clone --depth=1 \
             "https://x-access-token:${GH_PAT}@github.com/${REPO}.git" canada
-          cd canada
-          git remote set-url origin "https://github.com/${REPO}.git"
+          # NOTE: do NOT reset the remote URL to an unauthenticated address.
+          # Keeping the token in the remote URL lets fetch/push authenticate
+          # without relying on a credential helper or interactive prompt.
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -149,14 +150,15 @@ jobs:
             echo "No new changes to commit"
           fi
 
-          git remote set-url origin "https://github.com/${REPO}.git"
+          AUTH_HEADER="$(printf 'x-access-token:%s' "$GH_PAT" | base64 -w 0)"
+          GIT_AUTH=(-c "http.extraheader=AUTHORIZATION: basic ${AUTH_HEADER}")
 
           PUSHED=false
 
           for attempt in {1..10}; do
             echo "Push attempt $attempt/10 for $RUN_DATE"
 
-            if ! git fetch origin main; then
+            if ! git "${GIT_AUTH[@]}" fetch origin main; then
               echo "Fetch failed"
               sleep $((attempt * 3))
               continue
@@ -175,10 +177,7 @@ jobs:
               break
             fi
 
-            AUTH_HEADER="$(printf 'x-access-token:%s' "$GH_PAT" | base64 -w 0)"
-
-            if git -c "http.extraheader=AUTHORIZATION: basic ${AUTH_HEADER}" \
-              push origin HEAD:main; then
+            if git "${GIT_AUTH[@]}" push origin HEAD:main; then
               echo "Push succeeded"
               PUSHED=true
               break
