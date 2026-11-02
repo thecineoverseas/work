@@ -2,14 +2,28 @@ name: USA Advance Scraper
 
 on:
   workflow_dispatch:
- 
+
 concurrency:
   group: usa-advance-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  scrape:
+  # ----------------------------------------------------
+  # 1. PARALLEL SHARDS (Each date runs in its own runner)
+  # ----------------------------------------------------
+  scrape-shards:
+    name: Scrape Advance (${{ matrix.date }})
     runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    strategy:
+      fail-fast: false
+      matrix:
+        date:
+          - "tomorrow"
+          - "2026-11-04"
+          - "2026-11-05"
+          - "2026-11-06"
 
     env:
       REPO: thecineoverseas/usa
@@ -37,23 +51,97 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            pip install requests aiohttp aiohttp-retry tqdm
+            pip install requests aiohttp aiohttp-retry tqdm curl_cffi
           fi
 
-      - name: Run USA Advance Scraper
+      - name: Run USA Advance Scraper (Date Shard)
+        env:
+          TARGET_DATE: ${{ github.event.inputs.target_date || matrix.date }}
         run: |
           cd usa
+          TARGET="${{ github.event.inputs.target_date || matrix.date }}"
+          echo "🎯 Scraping USA Advance for date: $TARGET (skipping global summary in shard)"
           if [ -f advance.py ]; then
-            python advance.py
+            python advance.py --date "$TARGET" --skip-global
           elif [ -f usa-Main/advance.py ]; then
-            python usa-Main/advance.py
+            python usa-Main/advance.py --date "$TARGET" --skip-global
           elif [ -f usa/usa-Main/advance.py ]; then
-            python usa/usa-Main/advance.py
+            python usa/usa-Main/advance.py --date "$TARGET" --skip-global
           else
-            python usa-advance.py
+            python usa-advance.py --date "$TARGET" --skip-global
           fi
 
-      - name: Commit & Push Output
+      - name: Commit & Push Date Shard Output
+        run: |
+          cd usa
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          TARGET="${{ github.event.inputs.target_date || matrix.date }}"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "[skip ci] update USA advance telemetry for $TARGET ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+
+            for i in {1..8}; do
+              echo "🔁 Push attempt $i..."
+              git pull --rebase --autostash origin main &&               git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
+              WAIT_SEC=$((RANDOM % 5 + i * 3))
+              echo "⚠️ Push failed or conflict. Retrying in ${WAIT_SEC}s..."
+              sleep $WAIT_SEC
+            done
+
+            echo "✅ Advance date shard pushed successfully"
+          else
+            echo "🟡 No changes detected for $TARGET"
+          fi
+
+  # -------------------------------------------------------------------
+  # 2. COMBINE STEP (Runs ONCE after all date shards have completed)
+  # -------------------------------------------------------------------
+  combine-global:
+    name: Generate Unified Global Summary
+    needs: scrape-shards
+    runs-on: ubuntu-latest
+    if: always()
+
+    env:
+      REPO: thecineoverseas/usa
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      - name: Install dependencies
+        run: |
+          cd usa
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install requests aiohttp aiohttp-retry tqdm curl_cffi
+          fi
+
+      - name: Run Global Aggregator
+        run: |
+          cd usa
+          echo "📊 Aggregating all date shards into unified global summary & movie rankings..."
+          if [ -f advance.py ]; then
+            python advance.py --global-only
+          elif [ -f usa-Main/advance.py ]; then
+            python usa-Main/advance.py --global-only
+          elif [ -f usa/usa-Main/advance.py ]; then
+            python usa/usa-Main/advance.py --global-only
+          else
+            python usa-advance.py --global-only
+          fi
+
+      - name: Commit & Push Global Summary
         run: |
           cd usa
           git config user.name "github-actions[bot]"
@@ -61,17 +149,17 @@ jobs:
 
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m "update USA advance telemetry ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+            git commit -m "update USA advance global summary & movie rankings ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
 
-            for i in {1..5}; do
+            for i in {1..8}; do
               echo "🔁 Push attempt $i..."
-              git pull --rebase origin main && \
-              git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
-              echo "⚠️ Push failed. Retrying in $((i*5))s..."
-              sleep $((i*5))
+              git pull --rebase --autostash origin main &&               git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
+              WAIT_SEC=$((RANDOM % 5 + i * 3))
+              echo "⚠️ Push failed or conflict. Retrying in ${WAIT_SEC}s..."
+              sleep $WAIT_SEC
             done
 
-            echo "✅ Advance updates pushed successfully"
+            echo "✅ Global summary pushed successfully"
           else
-            echo "🟡 No changes detected"
+            echo "🟡 No global summary changes detected"
           fi
