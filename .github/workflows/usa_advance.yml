@@ -20,9 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         date:
-          - "2026-11-05"
-          - "2026-11-06"
-
+          - "tomo"
     env:
       REPO: thecineoverseas/usa
 
