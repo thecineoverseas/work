@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         date:
-          - "tomo"
+          - "tomorrow"
     env:
       REPO: thecineoverseas/usa
 
