@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        date: ["20261014"]
+        date: ["20261113"]
 
     env:
       REPO: thecineoverseas/denamark
