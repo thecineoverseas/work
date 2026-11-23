@@ -2,8 +2,6 @@ name: USA Advance - Avengers Doomsday (Shards & Global)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 */3 * * *'
 
 concurrency:
   group: usa-avengers-doomsday-advance-${{ github.ref }}
@@ -11,14 +9,14 @@ concurrency:
 
 jobs:
   track-shards:
-    name: Shard Day  (Avengers Doomsday)
+    name: Shard Day ${{ matrix.shard }} (Avengers Doomsday)
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
     strategy:
       fail-fast: false
       matrix:
-        shard: ["17","18","19","20"]
+        shard: ["17", "18", "19", "20"]
 
     env:
       REPO: thecineoverseas/usa
@@ -73,7 +71,7 @@ jobs:
           echo "🎬 Running Fandango Tracker for Movie: 237176 (Avengers: Doomsday) | Shard Day: $SHARD"
           echo "=========================================="
 
-          python fandango_single_movie.py --movie-id 237176 --shard "$SHARD" --concurrency 50
+          python fandango_single_movie.py --movie-id 237176 --shard "$SHARD" --concurrency 35 --skip-global
 
       - name: Commit & Push Shard Output
         run: |
@@ -89,16 +87,22 @@ jobs:
           # Jitter sleep to avoid simultaneous push contention between shards
           sleep $(( RANDOM % 12 + 2 ))
 
-          git add -A
+          # ONLY stage this shard's date directory to prevent conflicts across parallel jobs
+          SHARD="${{ matrix.shard }}"
+          git add data/advance/*/*/"$SHARD"/ 2>/dev/null || true
+          git add data/advance/*/*/*/"$SHARD"/ 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git commit -m "[skip ci] update Fandango Advance: Movie 237176 (Avengers: Doomsday Day ${{ matrix.shard }}) ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
 
             for i in {1..8}; do
               echo "🔁 Push attempt $i..."
-              git pull --rebase origin main && \
-              git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
-              echo "⚠️ Push failed. Retrying in $((i*5))s..."
-              sleep $((i*5))
+              if git pull --rebase origin main && git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+                echo "✅ Shard ${{ matrix.shard }} updates pushed successfully"
+                break
+              fi
+              echo "⚠️ Push failed. Aborting rebase and retrying in $((i*5))s..."
+              git rebase --abort 2>/dev/null || true
+              sleep $(( RANDOM % 10 + i * 5 ))
             done
 
             echo "✅ Shard ${{ matrix.shard }} updates pushed successfully"
@@ -169,14 +173,17 @@ jobs:
 
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m "update USA global advance summary & rankings ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+            git commit -m "[skip ci] update USA global advance summary & rankings ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
 
             for i in {1..8}; do
               echo "🔁 Push attempt $i..."
-              git pull --rebase origin main && \
-              git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
-              echo "⚠️ Push failed. Retrying in $((i*5))s..."
-              sleep $((i*5))
+              if git pull --rebase origin main && git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+                echo "✅ Global advance rollup pushed successfully"
+                break
+              fi
+              echo "⚠️ Push failed. Aborting rebase and retrying in $((i*5))s..."
+              git rebase --abort 2>/dev/null || true
+              sleep $(( RANDOM % 10 + i * 5 ))
             done
 
             echo "✅ Global advance rollup pushed successfully"
