@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   track-shards:
-    name: Shard Day ${{ matrix.shard }} (Avengers Doomsday)
+    name: Shard Day  (Avengers Doomsday)
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
