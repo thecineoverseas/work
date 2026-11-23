@@ -1,0 +1,116 @@
+name: USA Advance - Convert to Canonical Structure
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: 'Source folder to convert (e.g. Advance/ or leave empty to auto-scan)'
+        required: false
+        default: ''
+        type: string
+      delete_old:
+        description: 'Delete old directory after successful conversion'
+        required: false
+        default: true
+        type: boolean
+      dry_run:
+        description: 'Dry run preview without modifying files'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: usa-advance-convert-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  convert-structure:
+    name: Convert to data/advance/YYYY/MM/DD/
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      REPO: thecineoverseas/usa
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone Private Repo
+        run: |
+          if [ -n "${{ secrets.GH_PAT }}" ]; then
+            git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+          else
+            git clone --depth=1 https://github.com/${{ env.REPO }}.git
+          fi
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install tqdm
+
+      - name: Run Structure Converter
+        run: |
+          # Navigate into repo directory if cloned in a subdirectory
+          if [ -d "usav2" ]; then
+            cd usav2
+          elif [ -d "usa" ]; then
+            cd usa
+          fi
+
+          echo "=========================================="
+          echo "🔄 Running Advance Structure Converter"
+          echo "📂 Source Folder : '${{ inputs.source }}'"
+          echo "🗑️ Delete Old   : ${{ inputs.delete_old }}"
+          echo "🔍 Dry Run      : ${{ inputs.dry_run }}"
+          echo "=========================================="
+
+          CMD="python convert_old_to_advance_structure.py"
+          if [ ! -f "convert_old_to_advance_structure.py" ] && [ -f "usa-Main/convert_old_to_advance_structure.py" ]; then
+            CMD="python usa-Main/convert_old_to_advance_structure.py"
+          fi
+
+          ARGS=""
+          if [ -n "${{ inputs.source }}" ]; then
+            ARGS="$ARGS --source '${{ inputs.source }}'"
+          fi
+          if [ "${{ inputs.delete_old }}" = "true" ]; then
+            ARGS="$ARGS --delete-old"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+
+          echo "Executing: $CMD $ARGS"
+          eval "$CMD $ARGS"
+
+      - name: Commit & Push Canonical Structure
+        run: |
+          if [ -d "usav2" ]; then
+            cd usav2
+          elif [ -d "usa" ]; then
+            cd usa
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "convert telemetry to canonical data/advance/YYYY/MM/DD/ structure ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+
+            for i in {1..8}; do
+              echo "🔁 Push attempt $i..."
+              git pull --rebase origin main && \
+              git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
+              echo "⚠️ Push failed. Retrying in $((i*5))s..."
+              sleep $((i*5))
+            done
+
+            echo "✅ Converted data pushed successfully"
+          else
+            echo "🟡 No changes detected"
+          fi
