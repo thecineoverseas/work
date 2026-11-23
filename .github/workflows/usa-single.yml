@@ -1,17 +1,17 @@
-name: USA Advance - Avatar Fire and Ash (Shards & Global)
+name: USA Advance - Avengers Doomsday (Shards & Global)
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 16 * * *'
+    - cron: '0 */3 * * *'
 
 concurrency:
-  group: usa-avatar-advance-${{ github.ref }}
+  group: usa-avengers-doomsday-advance-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   track-shards:
-    name: Shard Day ${{ matrix.shard }} (Avatar)
+    name: Shard Day ${{ matrix.shard }} (Avengers Doomsday)
     runs-on: ubuntu-latest
     timeout-minutes: 180
 
@@ -70,10 +70,10 @@ jobs:
           SHARD="${{ matrix.shard }}"
 
           echo "=========================================="
-          echo "🎬 Running Fandango Tracker for Movie: 237176 | Shard Day: $SHARD"
+          echo "🎬 Running Fandango Tracker for Movie: 237176 (Avengers: Doomsday) | Shard Day: $SHARD"
           echo "=========================================="
 
-          python fandango_single_movie.py --movie-id 237176 --shard "$SHARD" --concurrency 60
+          python fandango_single_movie.py --movie-id 237176 --shard "$SHARD" --concurrency 50
 
       - name: Commit & Push Shard Output
         run: |
@@ -91,7 +91,7 @@ jobs:
 
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m "[skip ci] update Fandango Advance: Movie 237176 (Day ${{ matrix.shard }}) ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+            git commit -m "[skip ci] update Fandango Advance: Movie 237176 (Avengers: Doomsday Day ${{ matrix.shard }}) ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
 
             for i in {1..8}; do
               echo "🔁 Push attempt $i..."
