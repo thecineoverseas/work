@@ -1,0 +1,185 @@
+name: USA Advance - Avatar Fire and Ash (Shards & Global)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 16 * * *'
+
+concurrency:
+  group: usa-avatar-advance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  track-shards:
+    name: Shard Day ${{ matrix.shard }} (Avatar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["17", "18", "19", "20"]
+
+    env:
+      REPO: thecineoverseas/usa
+      PYTHONDONTWRITEBYTECODE: "1"
+      MOVIE_ID: "237176"
+
+    steps:
+      - name: Setup Swap Space (8GB)
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 8G /swapfile_runner || sudo dd if=/dev/zero of=/swapfile_runner bs=1M count=8192
+          sudo chmod 600 /swapfile_runner
+          sudo mkswap /swapfile_runner
+          sudo swapon /swapfile_runner
+          free -h
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone Private Repo
+        run: |
+          if [ -n "${{ secrets.GH_PAT }}" ]; then
+            git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+          else
+            git clone --depth=1 https://github.com/${{ env.REPO }}.git
+          fi
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests aiohttp aiohttp-retry tqdm curl_cffi
+
+      - name: Run Fandango Single Movie Tracker
+        run: |
+          if [ -d "usav2" ]; then
+            cd usav2
+          elif [ -d "usa" ]; then
+            cd usa
+          fi
+
+          SHARD="${{ matrix.shard }}"
+
+          echo "=========================================="
+          echo "🎬 Running Fandango Tracker for Movie: 237176 | Shard Day: $SHARD"
+          echo "=========================================="
+
+          python fandango_single_movie.py --movie-id 237176 --shard "$SHARD" --concurrency 60
+
+      - name: Commit & Push Shard Output
+        run: |
+          if [ -d "usav2" ]; then
+            cd usav2
+          elif [ -d "usa" ]; then
+            cd usa
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Jitter sleep to avoid simultaneous push contention between shards
+          sleep $(( RANDOM % 12 + 2 ))
+
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "[skip ci] update Fandango Advance: Movie 237176 (Day ${{ matrix.shard }}) ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+
+            for i in {1..8}; do
+              echo "🔁 Push attempt $i..."
+              git pull --rebase origin main && \
+              git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
+              echo "⚠️ Push failed. Retrying in $((i*5))s..."
+              sleep $((i*5))
+            done
+
+            echo "✅ Shard ${{ matrix.shard }} updates pushed successfully"
+          else
+            echo "🟡 No changes detected for Shard ${{ matrix.shard }}"
+          fi
+
+  global:
+    name: Global Advance Rollup
+    needs: track-shards
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      REPO: thecineoverseas/usa
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone Private Repo
+        run: |
+          if [ -n "${{ secrets.GH_PAT }}" ]; then
+            git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+          else
+            git clone --depth=1 https://github.com/${{ env.REPO }}.git
+          fi
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests aiohttp tqdm
+
+      - name: Run Global Advance Rollup
+        run: |
+          if [ -d "usav2" ]; then
+            cd usav2
+          elif [ -d "usa" ]; then
+            cd usa
+          fi
+
+          echo "=========================================="
+          echo "🌐 Generating Global Advance Rollup & Rankings"
+          echo "=========================================="
+
+          if [ -f fandango_single_movie.py ]; then
+            python fandango_single_movie.py --global-only
+          elif [ -f usa-Main/advance.py ]; then
+            python usa-Main/advance.py --global-only
+          elif [ -f advance.py ]; then
+            python advance.py --global-only
+          fi
+
+      - name: Commit & Push Global Output
+        run: |
+          if [ -d "usav2" ]; then
+            cd usav2
+          elif [ -d "usa" ]; then
+            cd usa
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "[skip ci] update USA global advance summary & rankings ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+
+            for i in {1..8}; do
+              echo "🔁 Push attempt $i..."
+              git pull --rebase origin main && \
+              git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
+              echo "⚠️ Push failed. Retrying in $((i*5))s..."
+              sleep $((i*5))
+            done
+
+            echo "✅ Global advance rollup pushed successfully"
+          else
+            echo "🟡 No changes detected for global rollup"
+          fi
