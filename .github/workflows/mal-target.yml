@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        date: ["20261116"]
+        date: ["20261216"]
 
     env:
       REPO: thecineoverseas/malaysia
