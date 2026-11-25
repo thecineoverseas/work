@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: usa-dune-part-three-advance-${{ github.ref }}
+  group: usa-dune-2-part-three-advance-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
