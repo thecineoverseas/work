@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        date: ["20261216"]
+        date: ["20261215"]
 
     env:
       REPO: thecineoverseas/malaysia
@@ -55,7 +55,7 @@ jobs:
           echo "🎬 Malaysia Scraper — mode=$MODE date=$RUN_DATE"
           for i in {1..6}; do
             echo "  Attempt $i"
-            if python malaysia.py --mode "$MODE" --date "$RUN_DATE" --days 5; then
+            if python malaysia.py --mode "$MODE" --date "$RUN_DATE" --days 1; then
               echo "  ✅ Done"
               break
             fi
