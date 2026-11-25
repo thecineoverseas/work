@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ["15", "16", "17", "18"]
+        shard: ["15", "16"]
 
     env:
       REPO: thecineoverseas/usa
