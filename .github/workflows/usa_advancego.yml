@@ -1,0 +1,150 @@
+name: USA Advance Scraper (Go)
+
+on:
+  workflow_dispatch:
+
+
+concurrency:
+  group: usa-advance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ----------------------------------------------------
+  # 1. PARALLEL SHARDS (Each date runs in its own runner)
+  # ----------------------------------------------------
+  scrape-shards:
+    name: Scrape Advance (${{ matrix.date }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        date:
+          - "tomorrow"
+          - "2026-12-03"
+          - "2026-12-04"
+    env:
+      REPO: thecineoverseas/usa
+
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      - name: Cache Go Modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('usa/usa-go/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Build Go Binary
+        run: |
+          cd usa/usa-go
+          go build -o /tmp/usa-go .
+
+      - name: Run USA Advance Scraper (Date Shard)
+        env:
+          TARGET_DATE: ${{ github.event.inputs.target_date || matrix.date }}
+        run: |
+          cd usa
+          TARGET="${{ github.event.inputs.target_date || matrix.date }}"
+          echo "🎯 Scraping USA Advance (Go) for date: $TARGET (skipping global summary in shard)"
+          /tmp/usa-go --mode advance --date "$TARGET" --out-dir data/advance --skip-global
+
+      - name: Commit & Push Date Shard Output
+        run: |
+          cd usa
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          TARGET="${{ github.event.inputs.target_date || matrix.date }}"
+          git add data/advance/
+          if ! git diff --cached --quiet; then
+            git commit -m "[skip ci] update USA advance telemetry for $TARGET ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+
+            for i in {1..8}; do
+              echo "🔁 Push attempt $i..."
+              git pull --rebase --autostash origin main && git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
+              WAIT_SEC=$((RANDOM % 5 + i * 3))
+              echo "⚠️ Push failed or conflict. Retrying in ${WAIT_SEC}s..."
+              sleep $WAIT_SEC
+            done
+
+            echo "✅ Advance date shard pushed successfully"
+          else
+            echo "🟡 No changes detected for $TARGET"
+          fi
+
+  # -------------------------------------------------------------------
+  # 2. COMBINE STEP (Runs ONCE after all date shards have completed)
+  # -------------------------------------------------------------------
+  combine-global:
+    name: Generate Unified Global Summary
+    needs: scrape-shards
+    runs-on: ubuntu-latest
+    if: always()
+
+    env:
+      REPO: thecineoverseas/usa
+
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      - name: Cache Go Modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('usa/usa-go/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Build Go Binary
+        run: |
+          cd usa/usa-go
+          go build -o /tmp/usa-go .
+
+      - name: Run Global Aggregator
+        run: |
+          cd usa
+          echo "📊 Aggregating all date shards into unified global summary & movie rankings..."
+          /tmp/usa-go --mode advance --out-dir data/advance --global-only
+
+      - name: Commit & Push Global Summary
+        run: |
+          cd usa
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add data/advance/
+          if ! git diff --cached --quiet; then
+            git commit -m "update USA advance global summary & movie rankings ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+
+            for i in {1..8}; do
+              echo "🔁 Push attempt $i..."
+              git pull --rebase --autostash origin main && git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
+              WAIT_SEC=$((RANDOM % 5 + i * 3))
+              echo "⚠️ Push failed or conflict. Retrying in ${WAIT_SEC}s..."
+              sleep $WAIT_SEC
+            done
+
+            echo "✅ Global summary pushed successfully"
+          else
+            echo "🟡 No global summary changes detected"
+          fi
