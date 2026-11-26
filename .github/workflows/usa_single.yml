@@ -1,0 +1,161 @@
+name: USA Target - Avengers Doomsday
+
+on:
+  workflow_dispatch:
+
+
+concurrency:
+  group: usa-target-237176-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ----------------------------------------------------
+  # 1. PARALLEL SHARDS (Dec 17 to Dec 20)
+  # ----------------------------------------------------
+  scrape-shards:
+    name: Avengers Doomsday (Day ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["17", "18", "19", "20"]
+
+    env:
+      REPO: thecineoverseas/usa
+      MOVIE_ID: "237176"
+
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      - name: Cache Go Modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('usa/go.sum', 'usa/usa-go/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Build Go Binary
+        run: |
+          if [ -f usa/go.mod ]; then
+            cd usa
+          elif [ -f usa/usa-go/go.mod ]; then
+            cd usa/usa-go
+          else
+            echo "❌ go.mod not found in usa/ or usa/usa-go/"
+            exit 1
+          fi
+          go build -o /tmp/usa-go .
+
+      - name: Run Target Movie Scraper (237176)
+        run: |
+          cd usa
+          /tmp/usa-go --mode target --movie ${{ env.MOVIE_ID }} --shard "${{ matrix.shard }}" --out-dir data/advance --skip-global
+
+      - name: Commit & Push Date Shard Output
+        run: |
+          cd usa
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          sleep $(( RANDOM % 10 + 2 ))
+          git add data/advance/
+          if ! git diff --cached --quiet; then
+            git commit -m "[skip ci] update Avengers Doomsday (237176) Day ${{ matrix.shard }} ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+
+            for i in {1..8}; do
+              echo "🔁 Push attempt $i..."
+              if git pull --rebase --autostash origin main && git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+                echo "✅ Shard ${{ matrix.shard }} pushed successfully"
+                break
+              fi
+              git rebase --abort 2>/dev/null || true
+              WAIT_SEC=$((RANDOM % 6 + i * 4))
+              sleep $WAIT_SEC
+            done
+          else
+            echo "🟡 No changes detected for Day ${{ matrix.shard }}"
+          fi
+
+  # -------------------------------------------------------------------
+  # 2. COMBINE STEP (Runs ONCE after all shards complete)
+  # -------------------------------------------------------------------
+  combine-global:
+    name: Generate Unified Global Summary
+    needs: scrape-shards
+    runs-on: ubuntu-latest
+    if: always()
+    timeout-minutes: 30
+
+    env:
+      REPO: thecineoverseas/usa
+
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Clone Private Repo
+        run: |
+          git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
+
+      - name: Cache Go Modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('usa/go.sum', 'usa/usa-go/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Build Go Binary
+        run: |
+          if [ -f usa/go.mod ]; then
+            cd usa
+          elif [ -f usa/usa-go/go.mod ]; then
+            cd usa/usa-go
+          else
+            echo "❌ go.mod not found in usa/ or usa/usa-go/"
+            exit 1
+          fi
+          go build -o /tmp/usa-go .
+
+      - name: Run Global Aggregator
+        run: |
+          cd usa
+          /tmp/usa-go --mode target --out-dir data/advance --global-only
+
+      - name: Commit & Push Global Summary
+        run: |
+          cd usa
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add data/advance/
+          if ! git diff --cached --quiet; then
+            git commit -m "update USA advance global summary ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
+
+            for i in {1..8}; do
+              echo "🔁 Push attempt $i..."
+              if git pull --rebase --autostash origin main && git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+                echo "✅ Global summary pushed successfully"
+                break
+              fi
+              git rebase --abort 2>/dev/null || true
+              WAIT_SEC=$((RANDOM % 6 + i * 4))
+              sleep $WAIT_SEC
+            done
+          else
+            echo "🟡 No global summary changes detected"
+          fi
