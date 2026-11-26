@@ -23,7 +23,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        target_date: ["20261118", "20261119", "20261120"]
+        target_date: ["20261203", "20261204"]
 
     env:
       REPO: thecineoverseas/canada
