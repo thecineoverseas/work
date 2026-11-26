@@ -1,7 +1,8 @@
-name: USA Advance Scraper
+name: USA Advance Scraper (Go)
 
 on:
   workflow_dispatch:
+
 
 concurrency:
   group: usa-advance-${{ github.ref }}
@@ -12,87 +13,79 @@ jobs:
   # 1. PARALLEL SHARDS (Each date runs in its own runner)
   # ----------------------------------------------------
   scrape-shards:
-    name: Scrape Advance (${{ matrix.date }})
+    name: Scrape Advance (${{ github.event.inputs.target_date || matrix.date }})
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 90
 
     strategy:
       fail-fast: false
       matrix:
         date:
-          - "tomorrow"
+          - "tomo"
           - "2026-12-03"
           - "2026-12-04"
+
     env:
       REPO: thecineoverseas/usa
 
     steps:
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          python-version: "3.12"
+          go-version: '1.24'
+          cache: false
 
       - name: Clone Private Repo
         run: |
           git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
-
-      - name: Cache pip
+      - name: Cache Go Modules
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('usa/requirements.txt') }}
-
-      - name: Install dependencies
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('usa/go.sum', 'usa/usa-go/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Build Go Binary
         run: |
-          cd usa
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
+          if [ -f usa/go.mod ]; then
+            cd usa
+          elif [ -f usa/usa-go/go.mod ]; then
+            cd usa/usa-go
           else
-            pip install requests aiohttp aiohttp-retry tqdm curl_cffi
+            echo "❌ go.mod not found in usa/ or usa/usa-go/"
+            exit 1
           fi
-
+          go build -o /tmp/usa-go .
       - name: Run USA Advance Scraper (Date Shard)
-        env:
-          TARGET_DATE: ${{ github.event.inputs.target_date || matrix.date }}
         run: |
           cd usa
           TARGET="${{ github.event.inputs.target_date || matrix.date }}"
-          echo "🎯 Scraping USA Advance for date: $TARGET (skipping global summary in shard)"
-          if [ -f advance.py ]; then
-            python advance.py --date "$TARGET" --skip-global
-          elif [ -f usa-Main/advance.py ]; then
-            python usa-Main/advance.py --date "$TARGET" --skip-global
-          elif [ -f usa/usa-Main/advance.py ]; then
-            python usa/usa-Main/advance.py --date "$TARGET" --skip-global
-          else
-            python usa-advance.py --date "$TARGET" --skip-global
-          fi
-
+          echo "🎯 Scraping USA Advance (Go) for date: $TARGET (skipping global summary in shard)"
+          /tmp/usa-go --mode advance --date "$TARGET" --out-dir data/advance --skip-global
       - name: Commit & Push Date Shard Output
         run: |
           cd usa
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           TARGET="${{ github.event.inputs.target_date || matrix.date }}"
-          git add -A
+          sleep $(( RANDOM % 8 + 2 ))
+          git add data/advance/
           if ! git diff --cached --quiet; then
             git commit -m "[skip ci] update USA advance telemetry for $TARGET ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
-
             for i in {1..8}; do
               echo "🔁 Push attempt $i..."
-              git pull --rebase --autostash origin main &&               git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
-              WAIT_SEC=$((RANDOM % 5 + i * 3))
+              if git pull --rebase --autostash origin main && git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+                echo "✅ Advance date shard pushed successfully"
+                break
+              fi
+              git rebase --abort 2>/dev/null || true
+              WAIT_SEC=$((RANDOM % 6 + i * 4))
               echo "⚠️ Push failed or conflict. Retrying in ${WAIT_SEC}s..."
               sleep $WAIT_SEC
             done
-
-            echo "✅ Advance date shard pushed successfully"
           else
             echo "🟡 No changes detected for $TARGET"
           fi
-
   # -------------------------------------------------------------------
   # 2. COMBINE STEP (Runs ONCE after all date shards have completed)
   # -------------------------------------------------------------------
@@ -101,63 +94,63 @@ jobs:
     needs: scrape-shards
     runs-on: ubuntu-latest
     if: always()
+    timeout-minutes: 30
 
     env:
       REPO: thecineoverseas/usa
 
     steps:
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          python-version: "3.12"
+          go-version: '1.24'
+          cache: false
 
       - name: Clone Private Repo
         run: |
           git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
-
-      - name: Install dependencies
+      - name: Cache Go Modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('usa/go.sum', 'usa/usa-go/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - name: Build Go Binary
         run: |
-          cd usa
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
+          if [ -f usa/go.mod ]; then
+            cd usa
+          elif [ -f usa/usa-go/go.mod ]; then
+            cd usa/usa-go
           else
-            pip install requests aiohttp aiohttp-retry tqdm curl_cffi
+            echo "❌ go.mod not found in usa/ or usa/usa-go/"
+            exit 1
           fi
-
+          go build -o /tmp/usa-go .
       - name: Run Global Aggregator
         run: |
           cd usa
           echo "📊 Aggregating all date shards into unified global summary & movie rankings..."
-          if [ -f advance.py ]; then
-            python advance.py --global-only
-          elif [ -f usa-Main/advance.py ]; then
-            python usa-Main/advance.py --global-only
-          elif [ -f usa/usa-Main/advance.py ]; then
-            python usa/usa-Main/advance.py --global-only
-          else
-            python usa-advance.py --global-only
-          fi
-
+          /tmp/usa-go --mode advance --out-dir data/advance --global-only
       - name: Commit & Push Global Summary
         run: |
           cd usa
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -A
+          git add data/advance/
           if ! git diff --cached --quiet; then
-            git commit -m "update USA advance global summary & movie rankings ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
-
+            git commit -m "[skip ci] update USA advance global summary & movie rankings ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
             for i in {1..8}; do
               echo "🔁 Push attempt $i..."
-              git pull --rebase --autostash origin main &&               git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
-              WAIT_SEC=$((RANDOM % 5 + i * 3))
+              if git pull --rebase --autostash origin main && git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+                echo "✅ Global summary pushed successfully"
+                break
+              fi
+              git rebase --abort 2>/dev/null || true
+              WAIT_SEC=$((RANDOM % 6 + i * 4))
               echo "⚠️ Push failed or conflict. Retrying in ${WAIT_SEC}s..."
               sleep $WAIT_SEC
             done
-
-            echo "✅ Global summary pushed successfully"
           else
             echo "🟡 No global summary changes detected"
           fi
