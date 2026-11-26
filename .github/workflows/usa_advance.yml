@@ -1,4 +1,4 @@
-name: USA Advance Scraper (Go)
+name: USA Advance Scraper
 
 on:
   workflow_dispatch:
