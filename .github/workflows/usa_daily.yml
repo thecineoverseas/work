@@ -1,8 +1,8 @@
-name: USA Daily Box Office Scraper
+name: USA Daily Box Office Scraper (Go)
 
 on:
   workflow_dispatch:
-  
+
 concurrency:
   group: usa-daily-${{ github.ref }}
   cancel-in-progress: true
@@ -10,48 +10,46 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     env:
       REPO: thecineoverseas/usa
 
     steps:
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          python-version: "3.12"
+          go-version: '1.24'
+          cache: false
 
       - name: Clone Private Repo
         run: |
           git clone --depth=1 https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git
 
-      - name: Cache pip
+      - name: Cache Go Modules
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('usa/requirements.txt') }}
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('usa/go.sum', 'usa/usa-go/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-      - name: Install dependencies
+      - name: Build Go Binary
         run: |
-          cd usa
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
+          if [ -f usa/go.mod ]; then
+            cd usa
+          elif [ -f usa/usa-go/go.mod ]; then
+            cd usa/usa-go
           else
-            pip install requests aiohttp aiohttp-retry tqdm
+            echo "❌ go.mod not found in usa/ or usa/usa-go/"
+            exit 1
           fi
+          go build -o /tmp/usa-go .
 
       - name: Run USA Daily Scraper
         run: |
           cd usa
-          if [ -f daily.py ]; then
-            python daily.py
-          elif [ -f usa-Main/daily.py ]; then
-            python usa-Main/daily.py
-          elif [ -f usa/usa-Main/daily.py ]; then
-            python usa/usa-Main/daily.py
-          else
-            python live.py
-          fi
+          /tmp/usa-go --mode daily --date today --out-dir data/daily
 
       - name: Commit & Push Output
         run: |
@@ -59,19 +57,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add -A
+          git add data/daily/
           if ! git diff --cached --quiet; then
             git commit -m "update USA daily box office telemetry ($(date -u +'%Y-%m-%d %H:%M:%S UTC'))"
 
             for i in {1..5}; do
               echo "🔁 Push attempt $i..."
-              git pull --rebase origin main && \
-              git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git && break
-              echo "⚠️ Push failed. Retrying in $((i*5))s..."
-              sleep $((i*5))
+              if git pull --rebase --autostash origin main && git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.REPO }}.git; then
+                echo "✅ Daily updates pushed successfully"
+                break
+              fi
+              git rebase --abort 2>/dev/null || true
+              sleep $((i * 5))
             done
-
-            echo "✅ Daily updates pushed successfully"
           else
             echo "🟡 No changes detected"
           fi
