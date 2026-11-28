@@ -22,6 +22,8 @@ jobs:
       matrix:
         date:
           - "tomorrow"
+          - "2026-12-03"
+          - "2026-12-04"
     
 
     env:
